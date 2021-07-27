@@ -270,8 +270,14 @@ class MemTableIterator : public InternalIterator {
   virtual Status status() const override { return Status::OK(); }
 
   /***************************** Shichao ********************************/
-  virtual Status GetMinMax(std::vector<std::vector<MinMax>>& v) const override {
+  virtual Status GetMinMax(std::vector<std::vector<MinMax>>& v,
+                           uint64_t* size) const override {
+    // initial value
     v.clear();
+    if (size) {
+      *size = 0;
+    }
+
     // test whether it is an empty table
     iter_->SeekToFirst();
     if (!iter_->Valid()) {
@@ -299,6 +305,11 @@ class MemTableIterator : public InternalIterator {
     Slice internal_max(GetLengthPrefixedSlice(iter_->key()));
     Slice user_key_max(internal_max.data(), internal_max.size() - 8);
     v[0][0].max_.assign(user_key_max.data(), user_key_max.size());
+
+    // record value size
+    if (size) {
+      *size = user_key_min.size() + user_key_max.size();
+    }
 
     return Status::OK();
   }

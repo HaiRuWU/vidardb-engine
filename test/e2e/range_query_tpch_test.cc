@@ -162,7 +162,7 @@ void TestTpchRangeQuery(bool flush, kTableType table, vector<uint32_t> cols) {
   FileIter* iter = dynamic_cast<FileIter*>(db->NewFileIterator(ro));
   for (iter->SeekToFirst(); iter->Valid(); iter->Next()) {
     vector<vector<MinMax>> v;
-    s = iter->GetMinMax(v);
+    s = iter->GetMinMax(v, nullptr);
     assert(s.ok() || s.IsNotFound());
     if (s.IsNotFound()) continue;
 

@@ -933,8 +933,13 @@ class ColumnTable::RangeQueryIterator : public InternalIterator {
     }
   }
 
-  virtual Status GetMinMax(std::vector<std::vector<MinMax>>& v) const override {
+  virtual Status GetMinMax(std::vector<std::vector<MinMax>>& v,
+                           uint64_t* size) const override {
+    // initial value
     v.clear();
+    if (size) {
+      *size = 0;
+    }
 
     // columns should already be sanitized so empty columns is impossible.
     v.resize(columns_.size());
@@ -957,6 +962,9 @@ class ColumnTable::RangeQueryIterator : public InternalIterator {
         }
 
         v[j].emplace_back(last_block_user_key, parsed_key.user_key.ToString());
+        if (size) {
+          *size += (last_block_user_key.size() + parsed_key.user_key.size());
+        }
 
         // for next block's min user key
         last_block_user_key.assign(parsed_key.user_key.data(),
@@ -972,6 +980,10 @@ class ColumnTable::RangeQueryIterator : public InternalIterator {
            iter->FirstLevelNext(false)) {
         v[j].emplace_back(iter->FirstLevelMin().ToString(),
                           iter->FirstLevelMax().ToString());
+        if (size) {
+          *size +=
+              (iter->FirstLevelMin().size() + iter->FirstLevelMax().size());
+        }
       }
     }
 

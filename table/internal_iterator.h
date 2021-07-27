@@ -83,7 +83,8 @@ class InternalIterator : public Cleanable {
   virtual Slice max() const { return Slice(); }
 
   // See comments in file_iter.h
-  virtual Status GetMinMax(std::vector<std::vector<MinMax>>& v) const {
+  virtual Status GetMinMax(std::vector<std::vector<MinMax>>& v,
+                           uint64_t* size) const {
     return Status::NotSupported(Slice("GetMinMax is not implemented"));
   }
 

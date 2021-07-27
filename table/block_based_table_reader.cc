@@ -783,8 +783,14 @@ class BlockBasedTable::RangeQueryIterator : public InternalIterator {
 
   virtual ~RangeQueryIterator() { delete iter_; }
 
-  virtual Status GetMinMax(std::vector<std::vector<MinMax>>& v) const override {
+  virtual Status GetMinMax(std::vector<std::vector<MinMax>>& v,
+                           uint64_t* size) const override {
+    // initial value
     v.clear();
+    if (size) {
+      *size = 0;
+    }
+
     // all columns or key column is involved
     // In other cases, we really can don nothing here.
     if (!columns_.empty() && columns_.front() != 0) {
@@ -808,6 +814,9 @@ class BlockBasedTable::RangeQueryIterator : public InternalIterator {
       }
 
       v[0].emplace_back(last_block_user_key, parsed_key.user_key.ToString());
+      if (size) {
+        *size += (last_block_user_key.size() + parsed_key.user_key.size());
+      }
 
       // for next block's min user key
       last_block_user_key.assign(parsed_key.user_key.data(),

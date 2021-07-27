@@ -56,7 +56,7 @@ void TestSimpleColumnStore(bool flush) {
   FileIter* file_iter = dynamic_cast<FileIter*>(db->NewFileIterator(ro));
   for (file_iter->SeekToFirst(); file_iter->Valid(); file_iter->Next()) {
     vector<vector<MinMax>> v;
-    s = file_iter->GetMinMax(v);
+    s = file_iter->GetMinMax(v, nullptr);
     assert(s.ok() || s.IsNotFound());
     if (s.IsNotFound()) continue;
 

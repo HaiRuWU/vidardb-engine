@@ -49,7 +49,9 @@ class FileIter : public Iterator {
   //
   // NotFound status might be returned because table might be empty, note at
   // this case v is also empty, and a full scan should not be executed later.
-  Status GetMinMax(std::vector<std::vector<MinMax>>& v) const;
+  //
+  // If size is not null, it will record all the MinMax value size.
+  Status GetMinMax(std::vector<std::vector<MinMax>>& v, uint64_t* size) const;
 
   // Estimate the size of current range query buffer to store required data
   // blocks and meta data. The parameter is used in row-oriented storage.

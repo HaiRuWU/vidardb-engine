@@ -10,3 +10,4 @@ make_config.mk
 *.so*
 libvidardb*dylib
 build
+util/build_version.cc

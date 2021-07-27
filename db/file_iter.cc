@@ -34,11 +34,12 @@ std::vector<InternalIterator*>* FileIter::GetInternalIterators() {
   return &children_;
 }
 
-Status FileIter::GetMinMax(std::vector<std::vector<MinMax>>& v) const {
+Status FileIter::GetMinMax(std::vector<std::vector<MinMax>>& v,
+                           uint64_t* size) const {
   if (cur_ >= children_.size()) {
     return Status::NotFound("out of bound");
   }
-  return children_[cur_]->GetMinMax(v);
+  return children_[cur_]->GetMinMax(v, size);
 }
 
 uint64_t FileIter::EstimateRangeQueryBufSize(uint32_t column_count) const {
