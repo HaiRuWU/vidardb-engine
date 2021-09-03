@@ -63,8 +63,7 @@ ImmutableCFOptions::ImmutableCFOptions(const Options& options)
           options.new_table_reader_for_compaction_inputs),
       compaction_readahead_size(options.compaction_readahead_size),
       num_levels(options.num_levels),
-      listeners(options.listeners),
-      row_cache(options.row_cache) {}
+      listeners(options.listeners) {}
 
 ColumnFamilyOptions::ColumnFamilyOptions()
     : comparator(BytewiseComparator()),
@@ -200,11 +199,8 @@ DBOptions::DBOptions()
       write_thread_slow_yield_usec(3),
       skip_stats_update_on_db_open(false),
       wal_recovery_mode(WALRecoveryMode::kPointInTimeRecovery),
-      row_cache(nullptr),
       fail_if_options_file_error(false),
-      dump_malloc_stats(false),
-      show_key_fun(nullptr),  // Shichao
-      export_path("") {       // Shichao
+      dump_malloc_stats(false) {
 }
 
 DBOptions::DBOptions(const Options& options)
@@ -264,11 +260,8 @@ DBOptions::DBOptions(const Options& options)
       write_thread_slow_yield_usec(options.write_thread_slow_yield_usec),
       skip_stats_update_on_db_open(options.skip_stats_update_on_db_open),
       wal_recovery_mode(options.wal_recovery_mode),
-      row_cache(options.row_cache),
       fail_if_options_file_error(options.fail_if_options_file_error),
-      dump_malloc_stats(options.dump_malloc_stats),
-      show_key_fun(options.show_key_fun),  // Shichao
-      export_path(options.export_path) {   // Shichao
+      dump_malloc_stats(options.dump_malloc_stats) {
 }
 
 static const char* const access_hints[] = {
@@ -350,11 +343,6 @@ void DBOptions::Dump(Logger* log) const {
          allow_concurrent_memtable_write);
   Header(log, "\tOptions.write_thread_slow_yield_usec: %" PRIu64,
          write_thread_slow_yield_usec);
-  if (row_cache) {
-    Header(log, "\tOptions.row_cache: %" PRIu64, row_cache->GetCapacity());
-  } else {
-    Header(log, "\tOptions.row_cache: None");
-  }
 }  // DBOptions::Dump
 
 void ColumnFamilyOptions::Dump(Logger* log) const {

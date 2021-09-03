@@ -944,11 +944,6 @@ struct DBOptions {
   // transaction is encountered in the WAL
   bool allow_2pc = false;
 
-  // A global cache for table-level rows.
-  // Default: nullptr (disabled)
-  // Not supported in VIDARDB_LITE mode!
-  std::shared_ptr<Cache> row_cache;
-
   // If true, then DB::Open / CreateColumnFamily / DropColumnFamily
   // / SetOptions will fail if options file is not detected or properly
   // persisted.
@@ -960,13 +955,6 @@ struct DBOptions {
   // when printing to LOG.
   // DEFAULT: false
   bool dump_malloc_stats;
-
-  /*************************** Shichao ***********************/
-  using showKeyFun = void(*)(const std::string&, std::string&);
-  showKeyFun show_key_fun;
-
-  std::string export_path;
-  /*************************** Shichao ***********************/
 };
 
 // Options to control the behavior of a database (passed to DB::Open)

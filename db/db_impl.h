@@ -605,7 +605,6 @@ class DBImpl : public DB {
 
   // Shichao, for visualization, triggered by MaybeScheduleFlushOrCompaction,
   // only usable for newly built files, using old files will report "unknown".
-  void ExportMeta(bool end = false);
   void MaybeScheduleFlushOrCompaction();
   void SchedulePendingFlush(ColumnFamilyData* cfd);
   void SchedulePendingCompaction(ColumnFamilyData* cfd);
