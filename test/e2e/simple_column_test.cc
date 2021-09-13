@@ -16,6 +16,7 @@ using namespace std;
 using namespace vidardb;
 
 const unsigned int kColumn = 3;  // value columns
+const unsigned int kCache = 4096;
 const string kDBPath = "/tmp/vidardb_simple_column_test";
 
 void TestSimpleColumnStore(bool flush) {
@@ -32,6 +33,11 @@ void TestSimpleColumnStore(bool flush) {
   for (auto i = 0u; i < opts->column_count; i++) {
     opts->value_comparators.push_back(BytewiseComparator());
   }
+
+  char cache[kCache];
+  opts->external_cache.reset(new ExternalCache(cache, sizeof(cache)));
+  const char* header = opts->external_cache->header();
+
   options.table_factory.reset(table_factory);
 
   DB* db;
@@ -62,11 +68,12 @@ void TestSimpleColumnStore(bool flush) {
 
     // block_bits is set for illustration purpose here.
     vector<bool> block_bits(1, true);
+    bool external_cache = false;
     uint64_t N = file_iter->EstimateRangeQueryBufSize(
-        ro.columns.empty() ? 4 : ro.columns.size());
-    char* buf = new char[N];
+        ro.columns.empty() ? 4 : ro.columns.size(), external_cache);
+    char buf[N];
     uint64_t valid_count, total_count;
-    s = file_iter->RangeQuery(block_bits, buf, N, &valid_count, &total_count);
+    s = file_iter->RangeQuery(block_bits, buf, N, valid_count, total_count);
     assert(s.ok());
 
     char* limit = buf + N;
@@ -74,13 +81,13 @@ void TestSimpleColumnStore(bool flush) {
     for (auto c : ro.columns) {
       for (int i = 0; i < valid_count; ++i) {
         uint64_t offset = *(--end), size = *(--end);
-        cout << Slice(buf + offset, size).ToString() << " ";
+        cout << Slice((external_cache ? header : buf) + offset, size).ToString()
+             << " ";
       }
       cout << endl;
       limit -= total_count * 2 * sizeof(uint64_t);
       end = reinterpret_cast<uint64_t*>(limit);
     }
-    delete[] buf;
   }
   delete file_iter;
 

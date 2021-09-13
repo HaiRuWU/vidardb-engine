@@ -42,16 +42,18 @@ Status FileIter::GetMinMax(std::vector<std::vector<MinMax>>& v,
   return children_[cur_]->GetMinMax(v, size);
 }
 
-uint64_t FileIter::EstimateRangeQueryBufSize(uint32_t column_count) const {
+uint64_t FileIter::EstimateRangeQueryBufSize(uint32_t column_count,
+                                             bool& external_cache) const {
   if (cur_ >= children_.size()) {
     return 0;
   }
-  return children_[cur_]->EstimateRangeQueryBufSize(column_count);
+  return children_[cur_]->EstimateRangeQueryBufSize(column_count,
+                                                    external_cache);
 }
 
 Status FileIter::RangeQuery(const std::vector<bool>& block_bits, char* buf,
-                            uint64_t capacity, uint64_t* valid_count,
-                            uint64_t* total_count) const {
+                            uint64_t capacity, uint64_t& valid_count,
+                            uint64_t& total_count) const {
   if (cur_ >= children_.size()) {
     return Status::NotFound("out of bound");
   }

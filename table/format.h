@@ -186,7 +186,9 @@ struct BlockContents {
         compression_type(_compression_type),
         allocation(std::move(_data)) {}
 
-  BlockContents(BlockContents&& other) VIDARDB_NOEXCEPT { *this = std::move(other); }
+  BlockContents(BlockContents&& other) VIDARDB_NOEXCEPT {
+    *this = std::move(other);
+  }
 
   BlockContents& operator=(BlockContents&& other) {
     data = std::move(other.data);
@@ -199,11 +201,13 @@ struct BlockContents {
 
 // Read the block identified by "handle" from "file".  On failure
 // return non-OK.  On success fill *result and return OK.
-extern Status ReadBlockContents(
-    RandomAccessFileReader* file, const ReadOptions& options,
-    const BlockHandle& handle, BlockContents* contents, Env* env,
-    bool do_uncompress = true, const Slice& compression_dict = Slice(),
-    Logger* info_log = nullptr, char** area = nullptr);  // Shichao
+extern Status ReadBlockContents(RandomAccessFileReader* file,
+                                const ReadOptions& options,
+                                const BlockHandle& handle,
+                                BlockContents* contents, Env* env,
+                                bool do_uncompress = true,
+                                const Slice& compression_dict = Slice(),
+                                Logger* info_log = nullptr);
 
 // The 'data' points to the raw block contents read in from file.
 // This method allocates a new heap buffer and the raw block
@@ -214,8 +218,7 @@ extern Status ReadBlockContents(
 // util/compression.h
 extern Status UncompressBlockContents(const char* data, size_t n,
                                       BlockContents* contents,
-                                      const Slice& compression_dict,
-                                      char** area = nullptr);  // Shichao
+                                      const Slice& compression_dict);
 
 // Implementation details follow.  Clients should ignore,
 

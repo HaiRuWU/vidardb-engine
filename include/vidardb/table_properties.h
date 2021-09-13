@@ -133,9 +133,6 @@ struct TableProperties {
  public:
   // the total size of all data blocks.
   uint64_t data_size = 0;
-  // the total size of all data blocks before compression,
-  // only used in columnar storage
-  uint64_t raw_data_size = 0;
   // the size of index block.
   uint64_t index_size = 0;
   // total raw key size

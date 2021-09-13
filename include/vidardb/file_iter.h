@@ -55,7 +55,8 @@ class FileIter : public Iterator {
 
   // Estimate the size of current range query buffer to store required data
   // blocks and meta data. The parameter is used in row-oriented storage.
-  uint64_t EstimateRangeQueryBufSize(uint32_t column_count) const;
+  uint64_t EstimateRangeQueryBufSize(uint32_t column_count,
+                                     bool& external_cache) const;
 
   // According to the calculated block bits, fetch the relevant attributes.
   // Sometimes the block_bits is empty, implying a full scan since no useful
@@ -64,8 +65,8 @@ class FileIter : public Iterator {
   //
   // Both valid_count and total_count record the tuple-wise number.
   Status RangeQuery(const std::vector<bool>& block_bits, char* buf,
-                    uint64_t capacity, uint64_t* valid_count,
-                    uint64_t* total_count) const;
+                    uint64_t capacity, uint64_t& valid_count,
+                    uint64_t& total_count) const;
 
  private:
   std::vector<InternalIterator*> children_;

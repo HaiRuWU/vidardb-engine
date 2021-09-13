@@ -82,8 +82,6 @@ std::string TableProperties::ToString(
                  prop_delim, kv_delim);
 
   AppendProperty(result, "data block size", data_size, prop_delim, kv_delim);
-  AppendProperty(result, "raw data block size", raw_data_size, prop_delim,
-                 kv_delim);
   AppendProperty(result, "index block size", index_size, prop_delim, kv_delim);
   AppendProperty(result, "(estimated) table size", data_size + index_size,
                  prop_delim, kv_delim);
@@ -117,7 +115,6 @@ std::string TableProperties::ToString(
 
 void TableProperties::Add(const TableProperties& tp) {
   data_size += tp.data_size;
-  raw_data_size += tp.raw_data_size;
   index_size += tp.index_size;
   raw_key_size += tp.raw_key_size;
   raw_value_size += tp.raw_value_size;
@@ -126,7 +123,6 @@ void TableProperties::Add(const TableProperties& tp) {
 }
 
 const std::string TablePropertiesNames::kDataSize = "vidardb.data.size";
-const std::string TablePropertiesNames::kRawDataSize = "vidardb.raw.data.size";
 const std::string TablePropertiesNames::kIndexSize =
     "vidardb.index.size";
 const std::string TablePropertiesNames::kRawKeySize =

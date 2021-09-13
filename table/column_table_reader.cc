@@ -109,6 +109,9 @@ void DeleteCachedIndexEntry(const Slice& key, void* value) {
   delete index_reader;
 }
 
+void DeleteExterncalCacheResource(void* arg, void* ignored) {
+  delete reinterpret_cast<Block*>(arg);
+}
 }  // anonymous namespace
 
 // CachableEntry represents the entries that *may* be fetched from block cache.
@@ -285,13 +288,134 @@ Status ColumnTable::GetDataBlockFromCache(
   return s;
 }
 
+// We only put the data instead of the entire block into external cache.
+// Probably performance can be improved via put data directly into
+// external cache instead of copying them.
+Status ColumnTable::PutDataBlockToExternalCache(const Slice& cache_key,
+                                                ExternalCache* cache,
+                                                Block* block) {
+  assert(block->compression_type() == kNoCompression);
+  Status s;
+
+  if (cache != nullptr && block->cachable()) {
+    s = cache->Insert(cache_key, block->data(), block->size());
+  }
+
+  return s;
+}
+
+Status ColumnTable::GetDataBlockFromExternalCache(const Slice& cache_key,
+                                                  ExternalCache* cache,
+                                                  Block*& block) {
+  block = nullptr;
+  Status s;
+
+  if (cache != nullptr) {
+    // Reuse only the data part instead of the entire block.
+    char* buf = nullptr;
+    size_t size;
+    cache->Lookup(cache_key, buf, size);
+    if (buf != nullptr) {
+      std::unique_ptr<char[], BlockContents::Deleter> data(buf);
+      // Keep the data in external cache intact when block gets deleted.
+      data.get_deleter().noop = true;
+      BlockContents contents(std::move(data), size, true, kNoCompression);
+      block = new Block(std::move(contents));
+      return s;
+    }
+  }
+
+  assert(block == nullptr);
+
+  return s;
+}
+
+InternalIterator* ColumnTable::NewDataBlockIteratorFromExternalCache(
+    Rep* rep, const ReadOptions& read_options, const BlockHandle& handle,
+    BlockIter* input_iter) {
+  ExternalCache* cache = rep->table_options.external_cache.get();
+  if (cache == nullptr) {
+    if (input_iter != nullptr) {
+      input_iter->SetStatus(Status::InvalidArgument("no external cache"));
+      return input_iter;
+    } else {
+      return NewErrorInternalIterator(
+          Status::InvalidArgument("no external cache"));
+    }
+  }
+
+  // Try to read from external cache.
+  // create key for external cache
+  char cache_key[kMaxCacheKeyPrefixSize + kMaxVarint64Length];
+  Slice key = GetCacheKey(rep->cache_key_prefix, rep->cache_key_prefix_size,
+                          handle, cache_key);
+  Block* block = nullptr;
+  Status s = GetDataBlockFromExternalCache(key, cache, block);
+
+  Slice compression_dict;
+  if (rep->compression_dict_block) {
+    compression_dict = rep->compression_dict_block->data;
+  }
+
+  const bool no_io = (read_options.read_tier == kBlockCacheTier);
+  if (block == nullptr && !no_io && read_options.fill_cache) {
+    std::unique_ptr<Block> raw_block;
+    s = ReadBlockFromFile(rep->file.get(), read_options, handle, &raw_block,
+                          rep->ioptions.env, true, compression_dict,
+                          rep->ioptions.info_log);
+
+    if (s.ok()) {
+      block = raw_block.release();
+      s = PutDataBlockToExternalCache(key, cache, block);
+    }
+  }
+
+  // Didn't get any data from external cache.
+  if (s.ok() && block == nullptr) {
+    if (no_io) {
+      // Could not read from external cache and can't do IO.
+      if (input_iter != nullptr) {
+        input_iter->SetStatus(Status::Incomplete("no blocking io"));
+        return input_iter;
+      } else {
+        return NewErrorInternalIterator(Status::Incomplete("no blocking io"));
+      }
+    }
+    std::unique_ptr<Block> raw_block;
+    s = ReadBlockFromFile(rep->file.get(), read_options, handle, &raw_block,
+                          rep->ioptions.env, true, compression_dict,
+                          rep->ioptions.info_log);
+    if (s.ok()) {
+      block = raw_block.release();
+    }
+  }
+
+  InternalIterator* iter;
+  if (s.ok() && block != nullptr) {
+    iter = block->NewIterator(&rep->internal_comparator, input_iter,
+                              (rep->column_num == 0) ? Block::kTypeMainColumn
+                                                     : Block::kTypeSubColumn);
+    // Data might come from either external cache or raw block, distinguish them
+    // when have deletion on them, keep and no keep respectively.
+    iter->RegisterCleanup(&DeleteExterncalCacheResource, block, nullptr);
+  } else {
+    if (input_iter != nullptr) {
+      input_iter->SetStatus(s);
+      iter = input_iter;
+    } else {
+      iter = NewErrorInternalIterator(s);
+    }
+  }
+  return iter;
+}
+
 // Convert an index iterator value (i.e., an encoded BlockHandle)
 // into an iterator over the contents of the corresponding block.
 // If input_iter is null, new a iterator
 // If input_iter is not null, update this iter and return it
 InternalIterator* ColumnTable::NewDataBlockIterator(
     Rep* rep, const ReadOptions& read_options, const Slice& index_value,
-    BlockIter* input_iter, char** area) {
+    BlockIter* input_iter, bool scan_mode) {
   PERF_TIMER_GUARD(new_table_block_iter_nanos);
 
   BlockHandle handle;
@@ -308,6 +432,12 @@ InternalIterator* ColumnTable::NewDataBlockIterator(
     }
   }
 
+  // If scan_mode is enabled and external cache exists, use external cache.
+  if (scan_mode) {
+    return NewDataBlockIteratorFromExternalCache(rep, read_options, handle,
+                                                 input_iter);
+  }
+
   Slice compression_dict;
   if (rep->compression_dict_block) {
     compression_dict = rep->compression_dict_block->data;
@@ -317,9 +447,7 @@ InternalIterator* ColumnTable::NewDataBlockIterator(
   Cache* block_cache = rep->table_options.block_cache.get();
   CachableEntry<Block> block;
   // If block cache is enabled, we'll try to read from it.
-  // But if area is specified, don't use block cache, since we would put data
-  // block in the specified area.
-  if (block_cache != nullptr && area == nullptr) {
+  if (block_cache != nullptr) {
     Statistics* statistics = rep->ioptions.statistics;
     char cache_key[kMaxCacheKeyPrefixSize + kMaxVarint64Length];
     // create key for block cache
@@ -358,7 +486,7 @@ InternalIterator* ColumnTable::NewDataBlockIterator(
     std::unique_ptr<Block> block_value;
     s = ReadBlockFromFile(rep->file.get(), read_options, handle, &block_value,
                           rep->ioptions.env, true, compression_dict,
-                          rep->ioptions.info_log, area);
+                          rep->ioptions.info_log);
     if (s.ok()) {
       block.value = block_value.release();
     }
@@ -914,17 +1042,17 @@ class ColumnTable::ColumnIterator : public InternalIterator {
 
 class ColumnTable::RangeQueryIterator : public InternalIterator {
  public:
-  RangeQueryIterator(
-      MainColumnTableIterator* main_iter,
-      const std::vector<SubColumnTableIterator*>& sub_iters,
-      const std::vector<uint32_t>& columns,
-      std::vector<std::shared_ptr<const TableProperties>>& table_properties,
-      const Slice& smallest_user_key)
+  RangeQueryIterator(MainColumnTableIterator* main_iter,
+                     const std::vector<SubColumnTableIterator*>& sub_iters,
+                     const std::vector<uint32_t>& columns,
+                     shared_ptr<const TableProperties>& table_properties,
+                     const Slice& smallest_user_key, ExternalCache* const cache)
       : main_iter_(main_iter),
         sub_iters_(sub_iters),
         columns_(columns),
         table_properties_(table_properties),
-        smallest_user_key_(smallest_user_key) {}
+        smallest_user_key_(smallest_user_key),
+        cache_(cache) {}
 
   virtual ~RangeQueryIterator() {
     delete main_iter_;
@@ -944,7 +1072,7 @@ class ColumnTable::RangeQueryIterator : public InternalIterator {
     // columns should already be sanitized so empty columns is impossible.
     v.resize(columns_.size());
     for (auto& m : v) {
-      m.reserve(table_properties_.front()->num_data_blocks);
+      m.reserve(table_properties_->num_data_blocks);
     }
     // column idx
     size_t j = 0;
@@ -991,37 +1119,31 @@ class ColumnTable::RangeQueryIterator : public InternalIterator {
   }
 
   // An accurate estimation
-  uint64_t EstimateRangeQueryBufSize(uint32_t column_count) const override {
+  uint64_t EstimateRangeQueryBufSize(uint32_t column_count,
+                                     bool& external_cache) const override {
     assert(column_count == columns_.size());
-
-    uint64_t res = 0;
-    // data block
-    for (auto& p : table_properties_) {
-      res += p->raw_data_size;
-    }
-
-    // offset & size
-    res += table_properties_.front()->num_entries * sizeof(uint64_t) * 2 *
-           columns_.size();
+    external_cache = true;
+    // only offset & size
+    uint64_t res =
+        table_properties_->num_entries * sizeof(uint64_t) * 2 * columns_.size();
     return res;
   }
 
   // TODO: handle update and delete
   virtual Status RangeQuery(const std::vector<bool>& block_bits, char* buf,
-                            uint64_t capacity, uint64_t* valid_count,
-                            uint64_t* total_count) const override {
+                            uint64_t capacity, uint64_t& valid_count,
+                            uint64_t& total_count) const override {
     assert(buf != nullptr);
-    *valid_count = 0;
-    *total_count = table_properties_.front()->num_entries;
-    uint64_t segment_size = (*total_count) * sizeof(uint64_t) * 2;
-    char* forward = buf;
+    valid_count = 0;
+    total_count = table_properties_->num_entries;
+    uint64_t segment_size = total_count * sizeof(uint64_t) * 2;
+    const char* header = cache_->header();
     char* limit = buf + capacity;
     uint64_t* backward = reinterpret_cast<uint64_t*>(limit);
 
     // If block_bits is empty, imply a full scan. No empty table case.
     // handle key column case
     size_t j = 0;
-    main_iter_->SetArea(forward);
     // block level
     for (main_iter_->SeekToFirst(); main_iter_->Valid();
          main_iter_->FirstLevelNext(true), j++) {
@@ -1030,25 +1152,23 @@ class ColumnTable::RangeQueryIterator : public InternalIterator {
         continue;
       }
       // within block
-      forward = main_iter_->GetArea();
       for (; main_iter_->Valid(); main_iter_->SecondLevelNext()) {
         ParsedInternalKey parsed_key;
         if (!ParseInternalKey(main_iter_->key(), &parsed_key)) {
           return Status::Corruption("corrupted internal key in Table::Iter");
         }
         // TODO: currently we are assuming no delete
-        ++(*valid_count);
+        ++valid_count;
         if (columns_.front() == 0) {
           // check out of bound
-          if (forward > reinterpret_cast<char*>(backward - 2)) {
+          if (buf > reinterpret_cast<char*>(backward - 2)) {
             return Status::InvalidArgument("Not enough specified memory.");
           }
-          *(--backward) = parsed_key.user_key.data() - buf;
+          *(--backward) = parsed_key.user_key.data() - header;
           *(--backward) = parsed_key.user_key.size();
         }
       }
     }
-    forward = main_iter_->GetArea();
     if (columns_.front() == 0) {
       limit -= segment_size;
       backward = reinterpret_cast<uint64_t*>(limit);
@@ -1058,7 +1178,6 @@ class ColumnTable::RangeQueryIterator : public InternalIterator {
     for (size_t i = 0; i < sub_iters_.size(); i++) {
       j = 0;
       auto iter = sub_iters_[i];
-      iter->SetArea(forward);
       // block level
       for (iter->SeekToFirst(); iter->Valid(); iter->FirstLevelNext(true), j++) {
         assert(block_bits.empty() || j < block_bits.size());
@@ -1066,17 +1185,15 @@ class ColumnTable::RangeQueryIterator : public InternalIterator {
           continue;
         }
         // within block
-        forward = iter->GetArea();
         for (; iter->Valid(); iter->SecondLevelNext()) {
           // check out of bound
-          if (forward > reinterpret_cast<char*>(backward - 2)) {
+          if (buf > reinterpret_cast<char*>(backward - 2)) {
             return Status::InvalidArgument("Not enough specified memory.");
           }
-          *(--backward) = iter->value().data() - buf;
+          *(--backward) = iter->value().data() - header;
           *(--backward) = iter->value().size();
         }
       }
-      forward = iter->GetArea();
       limit -= segment_size;
       backward = reinterpret_cast<uint64_t*>(limit);
     }
@@ -1087,9 +1204,10 @@ class ColumnTable::RangeQueryIterator : public InternalIterator {
  private:
   MainColumnTableIterator* main_iter_;
   std::vector<SubColumnTableIterator*> sub_iters_;
-  const std::vector<uint32_t> columns_;
-  std::vector<std::shared_ptr<const TableProperties>> table_properties_;
+  std::vector<uint32_t> columns_;
+  shared_ptr<const TableProperties> table_properties_;
   Slice smallest_user_key_;
+  ExternalCache* const cache_;
 };
 
 // Note: Column index must be from 0 to MAX_COLUMN_INDEX.
@@ -1137,9 +1255,6 @@ InternalIterator* ColumnTable::NewIterator(const ReadOptions& read_options,
     MainColumnTableIterator* main_iter =
         new MainColumnTableIterator(new BlockEntryIteratorState(this, ro));
 
-    std::vector<std::shared_ptr<const TableProperties>> table_properties;
-    table_properties.push_back(rep_->table_properties);
-
     std::vector<SubColumnTableIterator*> sub_iters;  // sub column
     for (const auto& column_index : ro.columns) {  // sub column
       if (column_index < 1) {  // only process the value columns
@@ -1149,12 +1264,11 @@ InternalIterator* ColumnTable::NewIterator(const ReadOptions& read_options,
       auto& table = rep_->tables[column_index-1];
       sub_iters.push_back(new SubColumnTableIterator(
           new BlockEntryIteratorState(table.get(), ro)));
-
-      table_properties.push_back(table->rep_->table_properties);
     }
 
     return new RangeQueryIterator(main_iter, sub_iters, ro.columns,
-                                  table_properties, smallest_user_key);
+                                  rep_->table_properties, smallest_user_key,
+                                  rep_->table_options.external_cache.get());
   }
 }
 

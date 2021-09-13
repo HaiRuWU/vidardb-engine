@@ -22,11 +22,10 @@ Status ReadBlockFromFile(RandomAccessFileReader* file,
                          const ReadOptions& options, const BlockHandle& handle,
                          std::unique_ptr<Block>* result, Env* env,
                          bool do_uncompress, const Slice& compression_dict,
-                         Logger* info_log, char** area = nullptr) {  // Shichao
+                         Logger* info_log) {
   BlockContents contents;
-  Status s =
-      ReadBlockContents(file, options, handle, &contents, env, do_uncompress,
-                        compression_dict, info_log, area);  // Shichao
+  Status s = ReadBlockContents(file, options, handle, &contents, env,
+                               do_uncompress, compression_dict, info_log);
   if (s.ok()) {
     result->reset(new Block(std::move(contents)));
   }

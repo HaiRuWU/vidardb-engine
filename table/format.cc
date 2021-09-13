@@ -211,8 +211,7 @@ Status ReadBlockContents(RandomAccessFileReader* file,
                          const ReadOptions& read_options,
                          const BlockHandle& handle, BlockContents* contents,
                          Env* env, bool decompression_requested,
-                         const Slice& compression_dict, Logger* info_log,
-                         char** area) {  // Shichao
+                         const Slice& compression_dict, Logger* info_log) {
   Status status;
   Slice slice;
   size_t n = static_cast<size_t>(handle.size());
@@ -247,41 +246,19 @@ Status ReadBlockContents(RandomAccessFileReader* file,
 
   if (decompression_requested && compression_type != kNoCompression) {
     // compressed page, uncompress, update cache
-    status = UncompressBlockContents(slice.data(), n, contents,
-                                     compression_dict, area);  // Shichao
+    status =
+        UncompressBlockContents(slice.data(), n, contents, compression_dict);
   } else if (slice.data() != used_buf) {
-    if (area != nullptr) {  // Shichao
-      return Status::NotSupported(
-          "no support for this kind of read operation "
-          "with specified area");
-    }
     // the slice content is not the buffer provided
     *contents = BlockContents(Slice(slice.data(), n), false, compression_type);
   } else {
     // page is uncompressed, the buffer either stack or heap provided
     if (used_buf == &stack_buf[0]) {
       heap_buf = std::unique_ptr<char[], BlockContents::Deleter>(
-          area ? new (*area) char[n] : new char[n]);    // Shichao
-      heap_buf.get_deleter().noop = (area != nullptr);  // Shichao
+          new char[n]);  // Shichao
       memcpy(heap_buf.get(), stack_buf, n);
-      if (area != nullptr) {
-        *area += n;
-      }
     }
-
-    // now always heap_buf
-    /************************** Shichao *****************************/
-    if (area != nullptr && heap_buf.get_deleter().noop == false) {
-      auto buf =
-          std::unique_ptr<char[], BlockContents::Deleter>(new (*area) char[n]);
-      buf.get_deleter().noop = true;
-      memcpy(buf.get(), heap_buf.get(), n);
-      *area += n;
-      *contents = BlockContents(std::move(buf), n, true, compression_type);
-      /************************** Shichao *****************************/
-    } else {
-      *contents = BlockContents(std::move(heap_buf), n, true, compression_type);
-    }
+    *contents = BlockContents(std::move(heap_buf), n, true, compression_type);
   }
 
   return status;
@@ -296,8 +273,7 @@ Status ReadBlockContents(RandomAccessFileReader* file,
 // format_version is the block format as defined in include/vidardb/table.h
 Status UncompressBlockContents(const char* data, size_t n,
                                BlockContents* contents,
-                               const Slice& compression_dict,
-                               char** area) {  // Shichao
+                               const Slice& compression_dict) {
   std::unique_ptr<char[], BlockContents::Deleter> ubuf;  // Shichao
   int decompress_size = 0;
   assert(data[n] != kNoCompression);
@@ -309,15 +285,7 @@ Status UncompressBlockContents(const char* data, size_t n,
       if (!Snappy_GetUncompressedLength(data, n, &ulength)) {
         return Status::Corruption(snappy_corrupt_msg);
       }
-      /***************************** Shichao *********************************/
-      if (area != nullptr) {
-        ubuf.reset(new (*area) char[ulength]);
-        ubuf.get_deleter().noop = true;  // noop got transferred by std::move
-        *area += ulength;
-      } else {
-        ubuf.reset(new char[ulength]);
-      }
-      /***************************** Shichao *********************************/
+      ubuf.reset(new char[ulength]);
       if (!Snappy_Uncompress(data, n, ubuf.get())) {
         return Status::Corruption(snappy_corrupt_msg);
       }
@@ -325,9 +293,6 @@ Status UncompressBlockContents(const char* data, size_t n,
       break;
     }
     case kZlibCompression:
-      if (area != nullptr) {  // Shichao
-        return Status::NotSupported("no support for Zlib with specified area");
-      }
       ubuf.reset(Zlib_Uncompress(
           data, n, &decompress_size,
           GetCompressFormatForVersion(kZlibCompression),
@@ -341,9 +306,6 @@ Status UncompressBlockContents(const char* data, size_t n,
           BlockContents(std::move(ubuf), decompress_size, true, kNoCompression);
       break;
     case kBZip2Compression:
-      if (area != nullptr) {  // Shichao
-        return Status::NotSupported("no support for BZip2 with specified area");
-      }
       ubuf.reset(BZip2_Uncompress(
           data, n, &decompress_size,
           GetCompressFormatForVersion(kBZip2Compression)));

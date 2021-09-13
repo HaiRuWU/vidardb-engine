@@ -16,6 +16,7 @@ using namespace std;
 using namespace vidardb;
 
 unsigned int M = 3;
+unsigned int P = 4096;
 string kDBPath = "/tmp/vidardb_range_query_column_example";
 
 int main(int argc, char* argv[]) {
@@ -35,6 +36,11 @@ int main(int argc, char* argv[]) {
   for (auto i = 0u; i < opts->column_count; i++) {
     opts->value_comparators.push_back(BytewiseComparator());
   }
+
+  char cache[P];
+  opts->external_cache.reset(new ExternalCache(cache, sizeof(cache)));
+  const char* header = opts->external_cache->header();
+
   options.table_factory.reset(table_factory);
 
   Status s = DB::Open(options, kDBPath, &db);
@@ -91,11 +97,12 @@ int main(int argc, char* argv[]) {
 
     // block_bits is set for illustration purpose here.
     vector<bool> block_bits(1, true);
+    bool external_cache = false;
     uint64_t N = iter->EstimateRangeQueryBufSize(
-        ro.columns.empty() ? 4 : ro.columns.size());
-    char* buf = new char[N];
+        ro.columns.empty() ? 4 : ro.columns.size(), external_cache);
+    char buf[N];
     uint64_t valid_count, total_count;
-    s = iter->RangeQuery(block_bits, buf, N, &valid_count, &total_count);
+    s = iter->RangeQuery(block_bits, buf, N, valid_count, total_count);
     assert(s.ok());
 
     char* limit = buf + N;
@@ -103,13 +110,13 @@ int main(int argc, char* argv[]) {
     for (auto c : ro.columns) {
       for (int i = 0; i < valid_count; ++i) {
         uint64_t offset = *(--end), size = *(--end);
-        cout << Slice(buf + offset, size).ToString() << " ";
+        cout << Slice((external_cache ? header : buf) + offset, size).ToString()
+             << " ";
       }
       cout << endl;
       limit -= total_count * 2 * sizeof(uint64_t);
       end = reinterpret_cast<uint64_t*>(limit);
     }
-    delete[] buf;
   }
   delete iter;
 

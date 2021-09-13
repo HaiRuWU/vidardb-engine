@@ -67,11 +67,13 @@ int main(int argc, char* argv[]) {
 
     // block_bits is set for illustration purpose here.
     vector<bool> block_bits(1, true);
+    bool external_cache = false;
     uint64_t N = iter->EstimateRangeQueryBufSize(
-        ro.columns.empty() ? 2 : ro.columns.size());
-    char* buf = new char[N];
+        ro.columns.empty() ? 2 : ro.columns.size(), external_cache);
+    assert(external_cache == false);
+    char buf[N];
     uint64_t valid_count, total_count;
-    s = iter->RangeQuery(block_bits, buf, N, &valid_count, &total_count);
+    s = iter->RangeQuery(block_bits, buf, N, valid_count, total_count);
     assert(s.ok());
 
     char* limit = buf + N;
@@ -85,7 +87,6 @@ int main(int argc, char* argv[]) {
       limit -= total_count * 2 * sizeof(uint64_t);
       end = reinterpret_cast<uint64_t*>(limit);
     }
-    delete[] buf;
   }
   delete iter;
 

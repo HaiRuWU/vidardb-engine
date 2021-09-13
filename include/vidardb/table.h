@@ -20,6 +20,7 @@
 #include <unordered_map>
 
 #include "vidardb/env.h"
+#include "vidardb/external_cache.h"
 #include "vidardb/immutable_options.h"
 #include "vidardb/iterator.h"
 #include "vidardb/options.h"
@@ -109,6 +110,9 @@ struct ColumnTableOptions {
   // If non-NULL use the specified cache for blocks.
   // If NULL, vidardb will automatically create and use an 8MB internal cache.
   std::shared_ptr<Cache> block_cache = nullptr;
+
+  // If NULL, ExternalCache is not used.
+  std::shared_ptr<ExternalCache> external_cache = nullptr;
 
   // Approximate size of user data packed per block. Note that the
   // block size specified here corresponds to uncompressed data. The

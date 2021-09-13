@@ -315,7 +315,9 @@ class MemTableIterator : public InternalIterator {
   }
 
   // return >= real required size
-  uint64_t EstimateRangeQueryBufSize(uint32_t column_count) const override {
+  uint64_t EstimateRangeQueryBufSize(uint32_t column_count,
+                                     bool& external_cache) const override {
+    external_cache = false;
     uint64_t res = data_size_;
 
     // offset & size
@@ -324,15 +326,15 @@ class MemTableIterator : public InternalIterator {
   }
 
   virtual Status RangeQuery(const std::vector<bool>& block_bits, char* buf,
-                            uint64_t capacity, uint64_t* valid_count,
-                            uint64_t* total_count) const override {
+                            uint64_t capacity, uint64_t& valid_count,
+                            uint64_t& total_count) const override {
     // block_bits is generally useless in memtable, since we treat the entire
     // memtable column as a block
     assert(block_bits.size() <= 1);
     assert(buf != nullptr);
 
-    *valid_count = 0;
-    *total_count = num_entries_;
+    valid_count = 0;
+    total_count = num_entries_;
 
     // If block_bits is empty, imply a full scan. No empty table case.
     // Quick path to jump out.
@@ -346,7 +348,7 @@ class MemTableIterator : public InternalIterator {
 
     // TODO: handle update and delete
     for (iter_->SeekToFirst(); iter_->Valid(); iter_->Next()) {
-      ++(*valid_count);
+      ++valid_count;
       backward = reinterpret_cast<uint64_t*>(limit);
 
       Slice internal_key = GetLengthPrefixedSlice(iter_->key());
@@ -356,7 +358,7 @@ class MemTableIterator : public InternalIterator {
 
       // handle key column
       if (columns_.empty() || columns_.front() == 0) {
-        if (!TransferKeyOrValue(user_key, buf, *total_count, forward,
+        if (!TransferKeyOrValue(user_key, buf, total_count, forward,
                                 backward)) {
           return Status::InvalidArgument("Not enough specified memory.");
         }
@@ -366,8 +368,7 @@ class MemTableIterator : public InternalIterator {
       if (splitter_ == nullptr || value.empty()) {
         // requiring columns are sorted and consecutive
         if (columns_.empty() || columns_.front() == 1 || columns_.size() > 1) {
-          if (!TransferKeyOrValue(value, buf, *total_count, forward,
-                                  backward)) {
+          if (!TransferKeyOrValue(value, buf, total_count, forward, backward)) {
             return Status::InvalidArgument("Not enough specified memory.");
           }
         }
@@ -375,8 +376,7 @@ class MemTableIterator : public InternalIterator {
         std::vector<Slice> user_vals(splitter_->Split(value));
         if (columns_.empty()) {
           for (const auto& val : user_vals) {
-            if (!TransferKeyOrValue(val, buf, *total_count, forward,
-                                    backward)) {
+            if (!TransferKeyOrValue(val, buf, total_count, forward, backward)) {
               return Status::InvalidArgument("Not enough specified memory.");
             }
           }
@@ -384,8 +384,7 @@ class MemTableIterator : public InternalIterator {
           for (auto index : columns_) {
             if (index < 1) continue;  // only process the value columns
             Slice& val = user_vals[index - 1];
-            if (!TransferKeyOrValue(val, buf, *total_count, forward,
-                                    backward)) {
+            if (!TransferKeyOrValue(val, buf, total_count, forward, backward)) {
               return Status::InvalidArgument("Not enough specified memory.");
             }
           }
@@ -547,7 +546,6 @@ struct Saver {
   const LookupKey* key;
   bool* found_final_value;   // Is value set correctly? Used by KeyMayExist
   std::string* get_value;    // User value ptr for Get()
-  std::list<RangeQueryKeyVal>* res;  // Shichao
   SequenceNumber seq;
   MemTable* mem;
   Logger* logger;

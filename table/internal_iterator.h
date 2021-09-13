@@ -21,10 +21,7 @@ namespace vidardb {
 
 class PinnedIteratorsManager;
 
-/*********************** Shichao **************************/
-struct RangeQueryKeyVal;
-struct MinMax;
-/*********************** Shichao **************************/
+struct MinMax;  // Shichao
 
 class InternalIterator : public Cleanable {
  public:
@@ -89,14 +86,15 @@ class InternalIterator : public Cleanable {
   }
 
   // See comments in file_iter.h
-  virtual uint64_t EstimateRangeQueryBufSize(uint32_t column_count) const {
+  virtual uint64_t EstimateRangeQueryBufSize(uint32_t column_count,
+                                             bool& external_cache) const {
     return 0;
   }
 
   // See comments in file_iter.h
   virtual Status RangeQuery(const std::vector<bool>& block_bits, char* buf,
-                            uint64_t capacity, uint64_t* valid_count,
-                            uint64_t* total_count) const {
+                            uint64_t capacity, uint64_t& valid_count,
+                            uint64_t& total_count) const {
     return Status::NotSupported(Slice("RangeQuery is not implemented"));
   }
   /***************************** Shichao ******************************/

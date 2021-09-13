@@ -345,9 +345,6 @@ void ColumnTableBuilder::WriteBlock(BlockBuilder* block,
                                     bool is_data_block) {
   Slice raw_block_contents = block->Finish();
   WriteBlock(raw_block_contents, handle, is_data_block);
-  if (is_data_block) {
-    rep_->props.raw_data_size += raw_block_contents.size();
-  }
   block->Reset();
 }
 

@@ -827,7 +827,9 @@ class BlockBasedTable::RangeQueryIterator : public InternalIterator {
   }
 
   // return >= real required size
-  uint64_t EstimateRangeQueryBufSize(uint32_t column_count) const override {
+  uint64_t EstimateRangeQueryBufSize(uint32_t column_count,
+                                     bool& external_cache) const override {
+    external_cache = false;
     uint64_t res = 0;
     // key
     if (columns_.empty() || columns_.front() == 0) {
@@ -843,11 +845,11 @@ class BlockBasedTable::RangeQueryIterator : public InternalIterator {
 
   // TODO: handle update and delete
   virtual Status RangeQuery(const std::vector<bool>& block_bits, char* buf,
-                            uint64_t capacity, uint64_t* valid_count,
-                            uint64_t* total_count) const override {
+                            uint64_t capacity, uint64_t& valid_count,
+                            uint64_t& total_count) const override {
     assert(buf != nullptr);
-    *valid_count = 0;
-    *total_count = properties_->num_entries;
+    valid_count = 0;
+    total_count = properties_->num_entries;
     char* forward = buf;
     char* limit = buf + capacity;
     uint64_t* backward = reinterpret_cast<uint64_t*>(limit);
@@ -869,12 +871,12 @@ class BlockBasedTable::RangeQueryIterator : public InternalIterator {
           return Status::Corruption("corrupted internal key in Table::Iter");
         }
 
-        ++(*valid_count);
+        ++valid_count;
         backward = reinterpret_cast<uint64_t*>(limit);
 
         // handle key column
         if (columns_.empty() || columns_.front() == 0) {
-          if (!TransferKeyOrValue(parsed_key.user_key, buf, *total_count,
+          if (!TransferKeyOrValue(parsed_key.user_key, buf, total_count,
                                   forward, backward)) {
             return Status::InvalidArgument("Not enough specified memory.");
           }
@@ -885,7 +887,7 @@ class BlockBasedTable::RangeQueryIterator : public InternalIterator {
           // requiring columns are sorted and consecutive
           if (columns_.empty() || columns_.front() == 1 ||
               columns_.size() > 1) {
-            if (!TransferKeyOrValue(iter->value(), buf, *total_count, forward,
+            if (!TransferKeyOrValue(iter->value(), buf, total_count, forward,
                                     backward)) {
               return Status::InvalidArgument("Not enough specified memory.");
             }
@@ -894,7 +896,7 @@ class BlockBasedTable::RangeQueryIterator : public InternalIterator {
           std::vector<Slice> user_vals(splitter_->Split(iter->value()));
           if (columns_.empty()) {
             for (const auto& val : user_vals) {
-              if (!TransferKeyOrValue(val, buf, *total_count, forward,
+              if (!TransferKeyOrValue(val, buf, total_count, forward,
                                       backward)) {
                 return Status::InvalidArgument("Not enough specified memory.");
               }
@@ -903,7 +905,7 @@ class BlockBasedTable::RangeQueryIterator : public InternalIterator {
             for (auto index : columns_) {
               if (index < 1) continue;  // only process the value columns
               Slice& val = user_vals[index - 1];
-              if (!TransferKeyOrValue(val, buf, *total_count, forward,
+              if (!TransferKeyOrValue(val, buf, total_count, forward,
                                       backward)) {
                 return Status::InvalidArgument("Not enough specified memory.");
               }

@@ -33,6 +33,7 @@ using namespace vidardb;
 
 enum kTableType { ROW, COLUMN };
 const unsigned int kColumn = 14;  // lineitem
+const unsigned int kCache = 4096;  // should be much larger
 const string kDBPath = "/tmp/vidardb_range_query_tpch_test";
 const string delim = "|";
 const char* kDataSet = "DATASET";
@@ -130,6 +131,11 @@ void TestTpchRangeQuery(bool flush, kTableType table, vector<uint32_t> cols) {
   for (auto i = 0u; i < column_opts->column_count; i++) {
     column_opts->value_comparators.push_back(BytewiseComparator());
   }
+
+  char cache[kCache];
+  column_opts->external_cache.reset(new ExternalCache(cache, sizeof(cache)));
+  const char* header = column_opts->external_cache->header();
+
   options.table_factory.reset(NewAdaptiveTableFactory(
       block_based_table, block_based_table, column_table, knob));
 
@@ -168,11 +174,12 @@ void TestTpchRangeQuery(bool flush, kTableType table, vector<uint32_t> cols) {
 
     // block_bits is set for illustration purpose here.
     vector<bool> block_bits(1, true);
-    uint64_t N = file_iter->EstimateRangeQueryBufSize(
-        ro.columns.empty() ? 15 : ro.columns.size());
+    bool external_cache = false;
+    uint64_t N = iter->EstimateRangeQueryBufSize(
+        ro.columns.empty() ? 15 : ro.columns.size(), external_cache);
     char* buf = new char[N];
     uint64_t valid_count, total_count;
-    s = iter->RangeQuery(block_bits, buf, N, &valid_count, &total_count);
+    s = iter->RangeQuery(block_bits, buf, N, valid_count, total_count);
     assert(s.ok());
 
     char* limit = buf + N;
@@ -180,7 +187,8 @@ void TestTpchRangeQuery(bool flush, kTableType table, vector<uint32_t> cols) {
     for (auto c : ro.columns) {
       for (int i = 0; i < valid_count; ++i) {
         uint64_t offset = *(--end), size = *(--end);
-        cout << Slice(buf + offset, size).ToString() << " ";
+        cout << Slice((external_cache ? header : buf) + offset, size).ToString()
+             << " ";
       }
       cout << endl;
       limit -= total_count * 2 * sizeof(uint64_t);
