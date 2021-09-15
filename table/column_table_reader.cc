@@ -330,18 +330,29 @@ Status ColumnTable::GetDataBlockFromExternalCache(const Slice& cache_key,
   return s;
 }
 
+InternalIterator* ColumnTable::SetIteratorStatus(BlockIter* input_iter,
+                                                 const Status& s) {
+  if (input_iter != nullptr) {
+    input_iter->SetStatus(s);
+    return input_iter;
+  } else {
+    return NewErrorInternalIterator(s);
+  }
+}
+
 InternalIterator* ColumnTable::NewDataBlockIteratorFromExternalCache(
     Rep* rep, const ReadOptions& read_options, const BlockHandle& handle,
     BlockIter* input_iter) {
   ExternalCache* cache = rep->table_options.external_cache.get();
   if (cache == nullptr) {
-    if (input_iter != nullptr) {
-      input_iter->SetStatus(Status::InvalidArgument("no external cache"));
-      return input_iter;
-    } else {
-      return NewErrorInternalIterator(
-          Status::InvalidArgument("no external cache"));
-    }
+    return SetIteratorStatus(input_iter,
+                             Status::InvalidArgument("no external cache"));
+  }
+
+  if (read_options.fill_cache == false) {
+    return SetIteratorStatus(
+        input_iter, Status::InvalidArgument(
+                        "no support for fill_cache=false in scan mode"));
   }
 
   // Try to read from external cache.
@@ -358,55 +369,43 @@ InternalIterator* ColumnTable::NewDataBlockIteratorFromExternalCache(
   }
 
   const bool no_io = (read_options.read_tier == kBlockCacheTier);
-  if (block == nullptr && !no_io && read_options.fill_cache) {
+  if (block == nullptr && !no_io) {
+    // only use the external cache data, delete itself when out of scope
     std::unique_ptr<Block> raw_block;
     s = ReadBlockFromFile(rep->file.get(), read_options, handle, &raw_block,
                           rep->ioptions.env, true, compression_dict,
                           rep->ioptions.info_log);
 
+    // put the fetched data block into external cache
     if (s.ok()) {
-      block = raw_block.release();
-      s = PutDataBlockToExternalCache(key, cache, block);
+      s = PutDataBlockToExternalCache(key, cache, raw_block.get());
+    }
+
+    // build data block from the external cache
+    if (s.ok()) {
+      s = GetDataBlockFromExternalCache(key, cache, block);
     }
   }
 
   // Didn't get any data from external cache.
   if (s.ok() && block == nullptr) {
-    if (no_io) {
-      // Could not read from external cache and can't do IO.
-      if (input_iter != nullptr) {
-        input_iter->SetStatus(Status::Incomplete("no blocking io"));
-        return input_iter;
-      } else {
-        return NewErrorInternalIterator(Status::Incomplete("no blocking io"));
-      }
-    }
-    std::unique_ptr<Block> raw_block;
-    s = ReadBlockFromFile(rep->file.get(), read_options, handle, &raw_block,
-                          rep->ioptions.env, true, compression_dict,
-                          rep->ioptions.info_log);
-    if (s.ok()) {
-      block = raw_block.release();
-    }
+    assert(no_io == true);
+    // Could not read from external cache and can't do IO.
+    return SetIteratorStatus(input_iter,
+                             Status::InvalidArgument("no blocking io"));
   }
 
-  InternalIterator* iter;
   if (s.ok() && block != nullptr) {
-    iter = block->NewIterator(&rep->internal_comparator, input_iter,
-                              (rep->column_num == 0) ? Block::kTypeMainColumn
-                                                     : Block::kTypeSubColumn);
-    // Data might come from either external cache or raw block, distinguish them
-    // when have deletion on them, keep and no keep respectively.
+    InternalIterator* iter =
+        block->NewIterator(&rep->internal_comparator, input_iter,
+                           (rep->column_num == 0) ? Block::kTypeMainColumn
+                                                  : Block::kTypeSubColumn);
+    // At this point, data must come from external cache.
     iter->RegisterCleanup(&DeleteExterncalCacheResource, block, nullptr);
+    return iter;
   } else {
-    if (input_iter != nullptr) {
-      input_iter->SetStatus(s);
-      iter = input_iter;
-    } else {
-      iter = NewErrorInternalIterator(s);
-    }
+    return SetIteratorStatus(input_iter, s);
   }
-  return iter;
 }
 
 // Convert an index iterator value (i.e., an encoded BlockHandle)
@@ -424,12 +423,7 @@ InternalIterator* ColumnTable::NewDataBlockIterator(
   // can add more features in the future.
   Status s = handle.DecodeFrom(&input);
   if (!s.ok()) {
-    if (input_iter != nullptr) {
-      input_iter->SetStatus(s);
-      return input_iter;
-    } else {
-      return NewErrorInternalIterator(s);
-    }
+    return SetIteratorStatus(input_iter, s);
   }
 
   // If scan_mode is enabled and external cache exists, use external cache.
@@ -476,12 +470,8 @@ InternalIterator* ColumnTable::NewDataBlockIterator(
   if (s.ok() && block.value == nullptr) {
     if (no_io) {
       // Could not read from block_cache and can't do IO
-      if (input_iter != nullptr) {
-        input_iter->SetStatus(Status::Incomplete("no blocking io"));
-        return input_iter;
-      } else {
-        return NewErrorInternalIterator(Status::Incomplete("no blocking io"));
-      }
+      return SetIteratorStatus(input_iter,
+                               Status::Incomplete("no blocking io"));
     }
     std::unique_ptr<Block> block_value;
     s = ReadBlockFromFile(rep->file.get(), read_options, handle, &block_value,
@@ -492,26 +482,21 @@ InternalIterator* ColumnTable::NewDataBlockIterator(
     }
   }
 
-  InternalIterator* iter;
   if (s.ok() && block.value != nullptr) {
-    iter = block.value->NewIterator(
+    InternalIterator* iter = block.value->NewIterator(
         &rep->internal_comparator, input_iter,
-        (rep->column_num == 0) ? Block::kTypeMainColumn : Block::kTypeSubColumn);
+        (rep->column_num == 0) ? Block::kTypeMainColumn
+                               : Block::kTypeSubColumn);
     if (block.cache_handle != nullptr) {
       iter->RegisterCleanup(&ReleaseCachedEntry, block_cache,
                             block.cache_handle);
     } else {
       iter->RegisterCleanup(&DeleteHeldResource<Block>, block.value, nullptr);
     }
+    return iter;
   } else {
-    if (input_iter != nullptr) {
-      input_iter->SetStatus(s);
-      iter = input_iter;
-    } else {
-      iter = NewErrorInternalIterator(s);
-    }
+    return SetIteratorStatus(input_iter, s);
   }
-  return iter;
 }
 
 Status ColumnTable::CreateIndexReader(IndexReader** index_reader) {

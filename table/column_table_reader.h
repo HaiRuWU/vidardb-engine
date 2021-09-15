@@ -190,6 +190,9 @@ class ColumnTable : public TableReader {
                                               ExternalCache* cache,
                                               Block*& block);
 
+  static InternalIterator* SetIteratorStatus(BlockIter* input_iter,
+                                             const Status& s);
+
   static InternalIterator* NewDataBlockIteratorFromExternalCache(
       Rep* rep, const ReadOptions& read_options, const BlockHandle& handle,
       BlockIter* input_iter);
