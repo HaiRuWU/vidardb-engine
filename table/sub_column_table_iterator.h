@@ -24,7 +24,7 @@ class SubColumnTableIterator {
     first_level_iter_.SeekToFirst();
     InitDataBlock();
     if (valid_second_level_iter_) {
-      second_level_iter_.SeekToFirst();
+      second_level_iter_.SeekToFirstInBatch();
     }
     SkipEmptyDataBlocksForward();
   }
@@ -43,13 +43,13 @@ class SubColumnTableIterator {
     if (prepare_second_level) {
       InitDataBlock();
       if (valid_second_level_iter_) {
-        second_level_iter_.SeekToFirst();
+        second_level_iter_.SeekToFirstInBatch();
       }
     }
   }
   void SecondLevelNext() {
     assert(FirstLevelValid());
-    second_level_iter_.Next();
+    second_level_iter_.NextValue();
   }
   Slice FirstLevelKey() const {
     assert(FirstLevelValid());
@@ -120,7 +120,7 @@ class SubColumnTableIterator {
       first_level_iter_.Next();
       InitDataBlock();
       if (valid_second_level_iter_) {
-        second_level_iter_.SeekToFirst();
+        second_level_iter_.SeekToFirstInBatch();
       }
     }
   }

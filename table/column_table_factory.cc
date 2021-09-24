@@ -36,6 +36,10 @@ ColumnTableFactory::ColumnTableFactory(
   }
   if (table_options_.block_restart_interval < 1) {
     table_options_.block_restart_interval = 1;
+  } else if (table_options_.block_restart_interval >
+             ColumnTableOptions::kMaxRestartInterval) {
+    table_options_.block_restart_interval =
+        ColumnTableOptions::kMaxRestartInterval;
   }
   if (table_options_.index_block_restart_interval < 1) {
     table_options_.index_block_restart_interval = 1;

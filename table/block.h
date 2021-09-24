@@ -90,8 +90,8 @@ class BlockIter : public InternalIterator {
   BlockIter(const Comparator* comparator, const char* data, uint32_t restarts,
             uint32_t num_restarts);
 
-  void Initialize(const Comparator* comparator, const char* data,
-                  uint32_t restarts, uint32_t num_restarts);
+  virtual void Initialize(const Comparator* comparator, const char* data,
+                          uint32_t restarts, uint32_t num_restarts);
 
   void SetStatus(Status s) { status_ = s; }
 
@@ -248,9 +248,17 @@ class BlockIter : public InternalIterator {
 // Sub-column block iterator, used in sub columns' data block
 class SubColumnBlockIter final : public BlockIter {
  public:
-  SubColumnBlockIter() : BlockIter() {}
+  SubColumnBlockIter()
+      : BlockIter(),
+        count_(0),
+        idx_(0),
+        fixed_length_(std::numeric_limits<uint32_t>::max()),
+        size_length_(0) {}
   SubColumnBlockIter(const Comparator* comparator, const char* data,
                      uint32_t restarts, uint32_t num_restarts);
+
+  virtual void Initialize(const Comparator* comparator, const char* data,
+                          uint32_t restarts, uint32_t num_restarts) override;
 
   virtual void Seek(const Slice& target) override;
 
@@ -275,6 +283,23 @@ class SubColumnBlockIter final : public BlockIter {
       return nullptr;
     }
     return p;
+  }
+
+  void NextValue() {
+    if (++idx_ < count_) {
+      value_ = values_[idx_];
+    } else {
+      restart_index_++;
+      ParseNextRestart();
+    }
+  }
+
+  void SeekToFirstInBatch() {
+    if (data_ == nullptr) {  // Not init yet
+      return;
+    }
+    SeekToRestartPoint(0);
+    ParseNextRestart();
   }
 
  private:
@@ -320,8 +345,60 @@ class SubColumnBlockIter final : public BlockIter {
     return true;
   }
 
+  bool ParseNextRestart() {
+    count_ = idx_ = 0;
+    current_ = NextEntryOffset();  // should be at the end of a restart interval
+    if (current_ >= restarts_) {
+      current_ = restarts_;
+      restart_index_ = num_restarts_;
+      return false;
+    }
+
+    uint32_t restart_offset = GetRestartPoint(restart_index_);
+    uint32_t next_restart_offset = (restart_index_ + 1) < num_restarts_
+                                       ? GetRestartPoint(restart_index_ + 1)
+                                       : restarts_;
+
+    const char* p = data_ + restart_offset;
+    const char* limit = data_ + next_restart_offset;
+
+    uint32_t key_length = 0;
+    p = DecodeKeyOrValue(p, limit, &key_length);
+    if (p == nullptr) {
+      CorruptionError();
+      return false;
+    }
+    key_.SetKey(Slice(p, key_length), false /* copy */);
+    p += key_length;
+
+    if (fixed_length_ != std::numeric_limits<uint32_t>::max()) {
+      uint32_t per_value_length = size_length_ + fixed_length_;
+      count_ = (limit - p) / per_value_length;
+      for (uint32_t i = 0; i < count_; i++) {
+        values_[i] =
+            Slice(p + i * per_value_length + size_length_, fixed_length_);
+      }
+    } else {
+      while (p < limit) {
+        uint32_t value_length = 0;
+        p = DecodeKeyOrValue(p, limit, &value_length);
+        values_[count_++] = Slice(p, value_length);
+        p += value_length;
+      }
+    }
+
+    value_ = values_[idx_];
+    return true;
+  }
+
   virtual bool BinarySeek(const Slice& target, uint32_t left, uint32_t right,
                           uint32_t* index) override;
+
+  Slice values_[ColumnTableOptions::kMaxRestartInterval];
+  uint32_t count_;
+  uint32_t idx_;
+  uint32_t fixed_length_;
+  uint32_t size_length_;
 };
 
 // Main column block iterator, used in main columns' data block
@@ -330,6 +407,10 @@ class MainColumnBlockIter final : public BlockIter {
   MainColumnBlockIter() : BlockIter(), has_val_(false), int_val_(0) {}
   MainColumnBlockIter(const Comparator* comparator, const char* data,
                       uint32_t restarts, uint32_t num_restarts);
+
+  virtual void Initialize(const Comparator* comparator, const char* data,
+                          uint32_t restarts, uint32_t num_restarts) override;
+
   void NextKey() {
     assert(Valid());
     ParseNextKeyOnly();
@@ -343,17 +424,12 @@ class MainColumnBlockIter final : public BlockIter {
   }
 
   virtual void SeekToRestartPoint(uint32_t index) override {
-    restart_index_ = index;
-    // current_ will be fixed by ParseNextKey();
-
-    // ParseNextKey() starts at the end of value_ or key_
-    uint32_t offset = GetRestartPoint(index);
-    value_ = Slice(data_ + offset, 0);
+    BlockIter::SeekToRestartPoint(index);
     key_.SetKey(value_, false);
 
     has_val_ = false;
     int_val_ = 0;
-    str_val_.empty();
+    str_val_.clear();
   }
 
   virtual void CorruptionError() override;
@@ -422,6 +498,9 @@ class MinMaxBlockIter final : public BlockIter {
   MinMaxBlockIter() : BlockIter(), max_storage_len_(0) {}
   MinMaxBlockIter(const Comparator* comparator, const char* data,
                   uint32_t restarts, uint32_t num_restarts);
+
+  virtual void Initialize(const Comparator* comparator, const char* data,
+                          uint32_t restarts, uint32_t num_restarts) override;
 
   virtual Slice min() const override {
     assert(Valid());

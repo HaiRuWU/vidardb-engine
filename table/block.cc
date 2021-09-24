@@ -171,6 +171,17 @@ SubColumnBlockIter::SubColumnBlockIter(const Comparator* comparator,
   Initialize(comparator, data, restarts, num_restarts);
 }
 
+void SubColumnBlockIter::Initialize(const Comparator* comparator,
+                                    const char* data, uint32_t restarts,
+                                    uint32_t num_restarts) {
+  // reduce num_restarts to reflect the true value, because the last one is
+  // fixed_length
+  BlockIter::Initialize(comparator, data, restarts, --num_restarts);
+  fixed_length_ =
+      DecodeFixed32(data_ + restarts_ + num_restarts * sizeof(uint32_t));
+  size_length_ = VarintLength(fixed_length_);
+}
+
 void SubColumnBlockIter::Seek(const Slice& target) {
   PERF_TIMER_GUARD(block_seek_nanos);
   if (data_ == nullptr) {  // Not init yet
@@ -247,6 +258,15 @@ MainColumnBlockIter::MainColumnBlockIter(const Comparator* comparator,
   Initialize(comparator, data, restarts, num_restarts);
 }
 
+void MainColumnBlockIter::Initialize(const Comparator* comparator,
+                                     const char* data, uint32_t restarts,
+                                     uint32_t num_restarts) {
+  BlockIter::Initialize(comparator, data, restarts, num_restarts);
+  has_val_ = false;
+  int_val_ = 0;
+  str_val_.clear();
+}
+
 void MainColumnBlockIter::CorruptionError() {
   BlockIter::CorruptionError();
   has_val_ = false;
@@ -293,6 +313,14 @@ MinMaxBlockIter::MinMaxBlockIter(const Comparator* comparator, const char* data,
                                  uint32_t restarts, uint32_t num_restarts)
     : MinMaxBlockIter() {
   Initialize(comparator, data, restarts, num_restarts);
+}
+
+void MinMaxBlockIter::Initialize(const Comparator* comparator, const char* data,
+                                 uint32_t restarts, uint32_t num_restarts) {
+  BlockIter::Initialize(comparator, data, restarts, num_restarts);
+  max_storage_len_ = 0;
+  min_.clear();
+  max_.clear();
 }
 
 void MinMaxBlockIter::CorruptionError() {

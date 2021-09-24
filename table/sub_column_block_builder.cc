@@ -27,6 +27,16 @@
 
 namespace vidardb {
 
+void SubColumnBlockBuilder::Reset() {
+  BlockBuilder::Reset();
+  fixed_length_ = std::numeric_limits<uint32_t>::max();
+}
+
+size_t SubColumnBlockBuilder::CurrentSizeEstimate() const {
+  return BlockBuilder::CurrentSizeEstimate() +
+         sizeof(uint32_t);  // fixed_length_
+}
+
 size_t SubColumnBlockBuilder::EstimateSizeAfterKV(const Slice& key,
                                                   const Slice& value) const {
   size_t estimate = CurrentSizeEstimate();
@@ -40,6 +50,11 @@ size_t SubColumnBlockBuilder::EstimateSizeAfterKV(const Slice& key,
   estimate += VarintLength(value.size()); // varint for value length.
 
   return estimate;
+}
+
+Slice SubColumnBlockBuilder::Finish() {
+  restarts_.push_back(fixed_length_);
+  return BlockBuilder::Finish();
 }
 
 void SubColumnBlockBuilder::Add(const Slice& key, const Slice& value) {
@@ -56,7 +71,17 @@ void SubColumnBlockBuilder::Add(const Slice& key, const Slice& value) {
   if (counter_ == 0) {
     PutVarint32(&buffer_, static_cast<uint32_t>(key.size()));
     buffer_.append(key.data(), key.size());
+    if (restarts_.size() == 1) {
+      fixed_length_ = value.size();  // initialization
+    }
   }
+
+  if (fixed_length_ != std::numeric_limits<uint32_t>::max()) {
+    fixed_length_ = (fixed_length_ == value.size())
+                        ? fixed_length_
+                        : std::numeric_limits<uint32_t>::max();
+  }
+
   PutVarint32(&buffer_, static_cast<uint32_t>(value.size()));
   buffer_.append(value.data(), value.size());
 

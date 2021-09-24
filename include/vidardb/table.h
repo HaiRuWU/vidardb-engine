@@ -127,11 +127,13 @@ struct ColumnTableOptions {
   // new record will be written to the next block.
   int block_size_deviation = 10;
 
+  static const int kMaxRestartInterval = 64;
+
   // Number of keys between restart points for delta encoding of keys.
   // This parameter can be changed dynamically. Most clients should
   // leave this parameter alone. The minimum value allowed is 1. Any smaller
   // value will be silently overwritten with 1.
-  int block_restart_interval = 16;
+  int block_restart_interval = 64;
 
   // Same as block_restart_interval but used for the index block.
   int index_block_restart_interval = 1;
