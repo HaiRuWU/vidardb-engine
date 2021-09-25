@@ -25,6 +25,16 @@
 
 namespace vidardb {
 
+void MainColumnBlockBuilder::Reset() {
+  BlockBuilder::Reset();
+  fixed_length_ = std::numeric_limits<uint32_t>::max();
+}
+
+size_t MainColumnBlockBuilder::CurrentSizeEstimate() const {
+  return BlockBuilder::CurrentSizeEstimate() +
+         sizeof(uint32_t);  // fixed_length_
+}
+
 size_t MainColumnBlockBuilder::EstimateSizeAfterKV(const Slice& key,
                                                    const Slice& value) const {
   size_t estimate = CurrentSizeEstimate();
@@ -37,6 +47,11 @@ size_t MainColumnBlockBuilder::EstimateSizeAfterKV(const Slice& key,
   }
 
   return estimate;
+}
+
+Slice MainColumnBlockBuilder::Finish() {
+  restarts_.push_back(fixed_length_);
+  return BlockBuilder::Finish();
 }
 
 void MainColumnBlockBuilder::Add(const Slice& key, const Slice& value) {
@@ -57,6 +72,15 @@ void MainColumnBlockBuilder::Add(const Slice& key, const Slice& value) {
   // Since we know the size of value (32bits), don't store its size.
   if (counter_ == 0) {
     buffer_.append(value.data(), value.size());
+    if (restarts_.size() == 1) {
+      fixed_length_ = key.size();  // initialization
+    }
+  }
+
+  if (fixed_length_ != std::numeric_limits<uint32_t>::max()) {
+    fixed_length_ = (fixed_length_ == key.size())
+                        ? fixed_length_
+                        : std::numeric_limits<uint32_t>::max();
   }
 
   // Update state

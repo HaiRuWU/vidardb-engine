@@ -24,7 +24,7 @@ class MainColumnTableIterator {
     first_level_iter_.SeekToFirst();
     InitDataBlock();
     if (valid_second_level_iter_) {
-      second_level_iter_.SeekToFirst();
+      second_level_iter_.SeekToFirstInBatch();
     }
     SkipEmptyDataBlocksForward();
   }
@@ -43,7 +43,7 @@ class MainColumnTableIterator {
     if (prepare_second_level) {
       InitDataBlock();
       if (valid_second_level_iter_) {
-        second_level_iter_.SeekToFirst();
+        second_level_iter_.SeekToFirstInBatch();
       }
     }
   }
@@ -112,7 +112,7 @@ class MainColumnTableIterator {
       first_level_iter_.Next();
       InitDataBlock();
       if (valid_second_level_iter_) {
-        second_level_iter_.SeekToFirst();
+        second_level_iter_.SeekToFirstInBatch();
       }
     }
   }

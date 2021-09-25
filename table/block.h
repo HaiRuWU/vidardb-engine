@@ -404,7 +404,14 @@ class SubColumnBlockIter final : public BlockIter {
 // Main column block iterator, used in main columns' data block
 class MainColumnBlockIter final : public BlockIter {
  public:
-  MainColumnBlockIter() : BlockIter(), has_val_(false), int_val_(0) {}
+  MainColumnBlockIter()
+      : BlockIter(),
+        has_val_(false),
+        int_val_(0),
+        count_(0),
+        idx_(0),
+        fixed_length_(std::numeric_limits<uint32_t>::max()),
+        size_length_(0) {}
   MainColumnBlockIter(const Comparator* comparator, const char* data,
                       uint32_t restarts, uint32_t num_restarts);
 
@@ -412,9 +419,22 @@ class MainColumnBlockIter final : public BlockIter {
                           uint32_t restarts, uint32_t num_restarts) override;
 
   void NextKey() {
-    assert(Valid());
-    ParseNextKeyOnly();
+    if (++idx_ < count_) {
+      key_.SetKey(keys_[idx_], false);
+    } else {
+      restart_index_++;
+      ParseNextRestart();
+    }
   }
+
+  void SeekToFirstInBatch() {
+    if (data_ == nullptr) {  // Not init yet
+      return;
+    }
+    SeekToRestartPoint(0);
+    ParseNextRestart();
+  }
+
  private:
   // Return the offset in data_ just past the end of the current entry.
   virtual uint32_t NextEntryOffset() const override {
@@ -484,12 +504,73 @@ class MainColumnBlockIter final : public BlockIter {
     return true;
   }
 
+  bool ParseNextRestart() {
+    count_ = idx_ = 0;
+    has_val_ = false;
+    current_ = NextEntryOffset();  // should be at the end of a restart interval
+    if (current_ >= restarts_) {
+      current_ = restarts_;
+      restart_index_ = num_restarts_;
+      return false;
+    }
+
+    uint32_t restart_offset = GetRestartPoint(restart_index_);
+    uint32_t next_restart_offset = (restart_index_ + 1) < num_restarts_
+                                       ? GetRestartPoint(restart_index_ + 1)
+                                       : restarts_;
+
+    const char* p = data_ + restart_offset;
+    const char* limit = data_ + next_restart_offset;
+
+    uint32_t key_length = 0;
+    p = SubColumnBlockIter::DecodeKeyOrValue(p, limit, &key_length);
+    if (p == nullptr) {
+      CorruptionError();
+      return false;
+    }
+    key_.SetKey(Slice(p, key_length), false /* copy */);
+    keys_[count_++] = key_.GetKey();
+    p += key_length;
+
+    value_ = Slice(p, 4);
+    p += 4;
+
+    if (p == limit) {
+      // just one element in restart
+      has_val_ = true;
+      return true;
+    }
+
+    if (fixed_length_ != std::numeric_limits<uint32_t>::max()) {
+      uint32_t per_key_length = size_length_ + fixed_length_;
+      count_ = (limit - p) / per_key_length + 1;
+      for (uint32_t i = 1; i < count_; i++) {
+        keys_[i] =
+            Slice(p + (i - 1) * per_key_length + size_length_, fixed_length_);
+      }
+    } else {
+      while (p < limit) {
+        p = SubColumnBlockIter::DecodeKeyOrValue(p, limit, &key_length);
+        keys_[count_++] = Slice(p, key_length);
+        p += key_length;
+      }
+    }
+
+    return true;
+  }
+
   virtual bool BinarySeek(const Slice& target, uint32_t left, uint32_t right,
                           uint32_t* index) override;
 
   bool has_val_;
   uint32_t int_val_;     // integer representation of sequence value
   std::string str_val_;  // big endian representation of sequence value
+
+  Slice keys_[ColumnTableOptions::kMaxRestartInterval];
+  uint32_t count_;
+  uint32_t idx_;
+  uint32_t fixed_length_;
+  uint32_t size_length_;
 };
 
 // Min max block iterator, used in sub columns' index block

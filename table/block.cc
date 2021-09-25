@@ -177,6 +177,7 @@ void SubColumnBlockIter::Initialize(const Comparator* comparator,
   // reduce num_restarts to reflect the true value, because the last one is
   // fixed_length
   BlockIter::Initialize(comparator, data, restarts, --num_restarts);
+  count_ = idx_ = 0;
   fixed_length_ =
       DecodeFixed32(data_ + restarts_ + num_restarts * sizeof(uint32_t));
   size_length_ = VarintLength(fixed_length_);
@@ -261,10 +262,16 @@ MainColumnBlockIter::MainColumnBlockIter(const Comparator* comparator,
 void MainColumnBlockIter::Initialize(const Comparator* comparator,
                                      const char* data, uint32_t restarts,
                                      uint32_t num_restarts) {
-  BlockIter::Initialize(comparator, data, restarts, num_restarts);
+  // reduce num_restarts to reflect the true value, because the last one is
+  // fixed_length
+  BlockIter::Initialize(comparator, data, restarts, --num_restarts);
   has_val_ = false;
   int_val_ = 0;
   str_val_.clear();
+  count_ = idx_ = 0;
+  fixed_length_ =
+      DecodeFixed32(data_ + restarts_ + num_restarts * sizeof(uint32_t));
+  size_length_ = VarintLength(fixed_length_);
 }
 
 void MainColumnBlockIter::CorruptionError() {
