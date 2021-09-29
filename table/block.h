@@ -187,7 +187,6 @@ class SubColumnBlockIter final : public BlockIter {
   SubColumnBlockIter()
       : BlockIter(),
         count_(0),
-        idx_(0),
         fixed_length_(std::numeric_limits<uint32_t>::max()),
         size_length_(0) {}
   SubColumnBlockIter(const Comparator* comparator, const char* data,
@@ -198,16 +197,17 @@ class SubColumnBlockIter final : public BlockIter {
 
   virtual void Seek(const Slice& target) override;
 
-  void NextValue() {
-    if (++idx_ < count_) {
-      value_ = values_[idx_];
-    } else {
-      restart_index_++;
-      ParseNextRestart();
-    }
-  }
-
   void SeekToFirstInBatch();
+
+  const Slice* values() const { return values_; }
+
+  uint32_t count() const { return count_; }
+
+  void NextRestart() {
+    value_ = values_[count_ - 1];
+    restart_index_++;
+    ParseNextRestart();
+  }
 
  private:
   virtual bool ParseNextKey() override;
@@ -219,7 +219,6 @@ class SubColumnBlockIter final : public BlockIter {
 
   Slice values_[ColumnTableOptions::kMaxRestartInterval];
   uint32_t count_;
-  uint32_t idx_;
   uint32_t fixed_length_;
   uint32_t size_length_;
 };
@@ -232,7 +231,6 @@ class MainColumnBlockIter final : public BlockIter {
         has_val_(false),
         int_val_(0),
         count_(0),
-        idx_(0),
         fixed_length_(std::numeric_limits<uint32_t>::max()),
         size_length_(0) {}
   MainColumnBlockIter(const Comparator* comparator, const char* data,
@@ -241,16 +239,17 @@ class MainColumnBlockIter final : public BlockIter {
   virtual void Initialize(const Comparator* comparator, const char* data,
                           uint32_t restarts, uint32_t num_restarts) override;
 
-  void NextKey() {
-    if (++idx_ < count_) {
-      key_.SetKey(keys_[idx_], false);
-    } else {
-      restart_index_++;
-      ParseNextRestart();
-    }
-  }
-
   void SeekToFirstInBatch();
+
+  const Slice* keys() const { return keys_; }
+
+  uint32_t count() const { return count_; }
+
+  void NextRestart() {
+    key_.SetKey(keys_[count_ - 1], false);
+    restart_index_++;
+    ParseNextRestart();
+  }
 
  private:
   // Return the offset in data_ just past the end of the current entry.
@@ -284,7 +283,6 @@ class MainColumnBlockIter final : public BlockIter {
 
   Slice keys_[ColumnTableOptions::kMaxRestartInterval];
   uint32_t count_;
-  uint32_t idx_;
   uint32_t fixed_length_;
   uint32_t size_length_;
 };

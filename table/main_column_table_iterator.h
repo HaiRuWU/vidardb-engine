@@ -47,10 +47,7 @@ class MainColumnTableIterator {
       }
     }
   }
-  void SecondLevelNext() {
-    assert(FirstLevelValid());
-    second_level_iter_.NextKey();
-  }
+
   Slice FirstLevelKey() const {
     assert(FirstLevelValid());
     return first_level_iter_.key();
@@ -71,6 +68,10 @@ class MainColumnTableIterator {
       return status_;
     }
   }
+
+  const Slice* keys() const { return second_level_iter_.keys(); }
+  uint32_t count() const { return second_level_iter_.count(); }
+  void NextRestart() { second_level_iter_.NextRestart(); }
 
  private:
   void SaveError(const Status& s) {

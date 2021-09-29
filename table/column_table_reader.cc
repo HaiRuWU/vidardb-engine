@@ -1136,21 +1136,30 @@ class ColumnTable::RangeQueryIterator : public InternalIterator {
       if (!block_bits.empty() && !block_bits[j]) {
         continue;
       }
+
       // within block
-      for (; main_iter_->Valid(); main_iter_->SecondLevelNext()) {
-        ParsedInternalKey parsed_key;
-        if (!ParseInternalKey(main_iter_->key(), &parsed_key)) {
-          return Status::Corruption("corrupted internal key in Table::Iter");
+      for (; main_iter_->Valid(); main_iter_->NextRestart()) {
+        const Slice* r = main_iter_->keys();
+        uint32_t c = main_iter_->count();
+
+        // check out of bound
+        if (columns_.front() == 0 &&
+            buf > reinterpret_cast<char*>(backward - 2 * c)) {
+          return Status::InvalidArgument("Not enough specified memory.");
         }
-        // TODO: currently we are assuming no delete
-        ++valid_count;
-        if (columns_.front() == 0) {
-          // check out of bound
-          if (buf > reinterpret_cast<char*>(backward - 2)) {
-            return Status::InvalidArgument("Not enough specified memory.");
+
+        // within restart interval
+        ParsedInternalKey parsed_key;
+        for (uint32_t k = 0; k < c; k++) {
+          if (!ParseInternalKey(r[k], &parsed_key)) {
+            return Status::Corruption("corrupted internal key in Table::Iter");
           }
-          *(--backward) = parsed_key.user_key.data() - header;
-          *(--backward) = parsed_key.user_key.size();
+          // TODO: currently we are assuming no delete
+          ++valid_count;
+          if (columns_.front() == 0) {
+            *(--backward) = parsed_key.user_key.data() - header;
+            *(--backward) = parsed_key.user_key.size();
+          }
         }
       }
     }
@@ -1169,14 +1178,22 @@ class ColumnTable::RangeQueryIterator : public InternalIterator {
         if (!block_bits.empty() && !block_bits[j]) {
           continue;
         }
+
         // within block
-        for (; iter->Valid(); iter->SecondLevelNext()) {
+        for (; iter->Valid(); iter->NextRestart()) {
+          const Slice* r = iter->values();
+          uint32_t c = iter->count();
+
           // check out of bound
-          if (buf > reinterpret_cast<char*>(backward - 2)) {
+          if (buf > reinterpret_cast<char*>(backward - 2 * c)) {
             return Status::InvalidArgument("Not enough specified memory.");
           }
-          *(--backward) = iter->value().data() - header;
-          *(--backward) = iter->value().size();
+
+          // within restart interval
+          for (uint32_t k = 0; k < c; k++) {
+            *(--backward) = r[k].data() - header;
+            *(--backward) = r[k].size();
+          }
         }
       }
       limit -= segment_size;

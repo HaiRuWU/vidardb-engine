@@ -242,7 +242,7 @@ void SubColumnBlockIter::Initialize(const Comparator* comparator,
   // reduce num_restarts to reflect the true value, because the last one is
   // fixed_length
   BlockIter::Initialize(comparator, data, restarts, --num_restarts);
-  count_ = idx_ = 0;
+  count_ = 0;
   fixed_length_ =
       DecodeFixed32(data_ + restarts_ + num_restarts * sizeof(uint32_t));
   size_length_ = VarintLength(fixed_length_);
@@ -356,7 +356,7 @@ bool SubColumnBlockIter::ParseNextKey() {
 }
 
 bool SubColumnBlockIter::ParseNextRestart() {
-  count_ = idx_ = 0;
+  count_ = 0;
   current_ = NextEntryOffset();  // should be at the end of a restart interval
   if (current_ >= restarts_) {
     current_ = restarts_;
@@ -397,7 +397,7 @@ bool SubColumnBlockIter::ParseNextRestart() {
     }
   }
 
-  value_ = values_[idx_];
+  value_ = values_[0];
   return true;
 }
 
@@ -452,7 +452,7 @@ void MainColumnBlockIter::Initialize(const Comparator* comparator,
   has_val_ = false;
   int_val_ = 0;
   str_val_.clear();
-  count_ = idx_ = 0;
+  count_ = 0;
   fixed_length_ =
       DecodeFixed32(data_ + restarts_ + num_restarts * sizeof(uint32_t));
   size_length_ = VarintLength(fixed_length_);
@@ -515,7 +515,7 @@ bool MainColumnBlockIter::ParseNextKey() {
 }
 
 bool MainColumnBlockIter::ParseNextRestart() {
-  count_ = idx_ = 0;
+  count_ = 0;
   has_val_ = false;
   current_ = NextEntryOffset();  // should be at the end of a restart interval
   if (current_ >= restarts_) {
