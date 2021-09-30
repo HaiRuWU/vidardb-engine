@@ -356,8 +356,8 @@ bool SubColumnBlockIter::ParseNextKey() {
 }
 
 bool SubColumnBlockIter::ParseNextRestart() {
-  count_ = 0;
   current_ = NextEntryOffset();  // should be at the end of a restart interval
+  count_ = 0;
   if (current_ >= restarts_) {
     current_ = restarts_;
     restart_index_ = num_restarts_;
@@ -515,9 +515,9 @@ bool MainColumnBlockIter::ParseNextKey() {
 }
 
 bool MainColumnBlockIter::ParseNextRestart() {
+  current_ = NextEntryOffset();  // should be at the end of a restart interval
   count_ = 0;
   has_val_ = false;
-  current_ = NextEntryOffset();  // should be at the end of a restart interval
   if (current_ >= restarts_) {
     current_ = restarts_;
     restart_index_ = num_restarts_;
