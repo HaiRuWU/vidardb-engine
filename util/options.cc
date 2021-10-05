@@ -552,7 +552,6 @@ ColumnFamilyOptions* ColumnFamilyOptions::OptimizeAdaptiveLevelStyleCompaction(
   max_write_buffer_number = 6;
   level0_file_num_compaction_trigger = 4;
   target_file_size_base = memtable_memory_budget / 8;
-  target_file_size_multiplier = 10;
   max_bytes_for_level_base = memtable_memory_budget;
   max_bytes_for_level_multiplier = 10;
 
