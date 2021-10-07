@@ -21,10 +21,11 @@ jobs:
           export LIBRARY_PATH="$LIBRARY_PATH:/tmp/gflags-2.1.2/lib"
           export CPLUS_INCLUDE_PATH="$CPLUS_INCLUDE_PATH:/tmp/gflags-2.1.2/include"
           export CPU_CORES=`cat /proc/cpuinfo | grep processor | wc -l`
+          export JOBS_NUMBER=$((CPU_CORES / 2))
           ulimit -n 2000 || true
       - uses: actions/checkout@v2
       - run: |
-          OPT="-DVIDARDB" V=1 make -j${CPU_CORES} release
-          OPT="-DVIDARDB" V=1 DEBUG_LEVEL=0 make -j${CPU_CORES} all
+          OPT="-DVIDARDB" V=1 make -j${JOBS_NUMBER} release
+          OPT="-DVIDARDB" V=1 DEBUG_LEVEL=0 make -j${JOBS_NUMBER} all
           cd test/e2e && make e2e-test
           cd ../../examples && OPT="-DVIDARDB" V=1 make all
