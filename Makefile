@@ -397,10 +397,12 @@ $(SHARED2): $(SHARED4)
 endif
 
 shared_libobjects = $(patsubst %,shared-objects/%,$(LIBOBJECTS))
+shared_libdepends = $(patsubst %.o,shared-objects/%.d,$(LIBOBJECTS))
 CLEAN_FILES += shared-objects
 
+-include $(shared_libdepends)
 $(shared_libobjects): shared-objects/%.o: %.cc
-	$(AM_V_CC)mkdir -p $(@D) && $(CXX) $(CXXFLAGS) $(PLATFORM_SHARED_CFLAGS) -c $< -o $@
+	$(AM_V_CC)mkdir -p $(@D) && $(CXX) $(CXXFLAGS) -MMD -MP $(PLATFORM_SHARED_CFLAGS) -c $< -o $@
 
 $(SHARED4): $(shared_libobjects)
 	$(CXX) $(PLATFORM_SHARED_LDFLAGS)$(SHARED2) $(CXXFLAGS) $(PLATFORM_SHARED_CFLAGS) $(shared_libobjects) $(LDFLAGS) -o $@
