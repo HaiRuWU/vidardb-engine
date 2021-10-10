@@ -12,6 +12,10 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
+      - name: Set Swap Space
+        uses: pierotofy/set-swap-space@master
+        with:
+          swap-size-gb: 10
       - name: Install dependencies
         run: |
           sudo apt update
@@ -22,6 +26,9 @@ jobs:
           export CPLUS_INCLUDE_PATH="$CPLUS_INCLUDE_PATH:/tmp/gflags-2.1.2/include"
           export CPU_CORES=`cat /proc/cpuinfo | grep processor | wc -l`
           export JOBS_NUMBER=$((CPU_CORES / 2))
+          echo "CPU_CORES: $CPU_CORES"
+          echo "JOBS_NUMBER: $JOBS_NUMBER"
+          free -m
           ulimit -n 2000 || true
       - uses: actions/checkout@v2
       - run: |
