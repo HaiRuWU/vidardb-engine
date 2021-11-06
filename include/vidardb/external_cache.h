@@ -13,6 +13,35 @@
 
 namespace vidardb {
 
+typedef bool (*LookupPtr)(const char*, size_t*, size_t*);
+typedef void (*InsertPtr)(const char*, size_t, size_t);
+typedef void (*ClearPtr)(void);
+
+// A fake version only support single process & single thread. To support
+// multi-process access, shared hash table should be employed.
+static std::unordered_map<std::string, std::pair<size_t, size_t>> h_;
+
+static bool simple_lookup(const char* key, size_t* offset, size_t* size) {
+  auto it = h_.find(std::string(key));
+  if (it == h_.end()) {
+    *offset = 0;
+    *size = 0;
+    return false;
+  } else {
+    *offset = it->second.first;
+    *size = it->second.second;
+    return true;
+  }
+}
+
+static void simple_insert(const char* key, size_t offset, size_t size) {
+  h_[std::string(key)] = std::make_pair(offset, size);
+}
+
+static void simple_clear(void) {
+  h_.clear();
+}
+
 // ExternalCache
 //
 // External cache accepts a given external area as a source to cache data. The
@@ -20,8 +49,12 @@ namespace vidardb {
 // is specifically designed for external cache.
 class ExternalCache {
  public:
-  ExternalCache(char* const header = nullptr, size_t capacity = 0)
-      : header_(header), capacity_(capacity), next_(0) {}
+  ExternalCache(char* const header = nullptr, size_t capacity = 0,
+                LookupPtr lookup = simple_lookup,
+                InsertPtr insert = simple_insert,
+                ClearPtr clear = simple_clear)
+      : header_(header), capacity_(capacity), next_(0),
+        lookup_(lookup), insert_(insert), clear_(clear) {}
 
   virtual ~ExternalCache() {}
 
@@ -40,11 +73,11 @@ class ExternalCache {
     }
 
     if (capacity_ - next_ < size) {
-      h_.clear();
+      clear_();
       next_ = 0;
     }
 
-    h_[key.ToString()] = std::make_pair(next_, size);
+    insert_(key.ToString().c_str(), next_, size);
     memcpy(header_ + next_, data, size);
     next_ += size;
     return s;
@@ -56,13 +89,11 @@ class ExternalCache {
   // data       Place where the data should be put
   // size       Size of the page
   void Lookup(const Slice& key, char*& data, size_t& size) {
-    auto it = h_.find(key.ToString());
-    if (it == h_.end()) {
-      data = nullptr;
-      size = 0;
+    size_t offset;
+    if (lookup_(key.ToString().c_str(), &offset, &size)) {
+      data = header_ + offset;
     } else {
-      data = header_ + it->second.first;
-      size = it->second.second;
+      data = nullptr;
     }
   }
 
@@ -73,9 +104,10 @@ class ExternalCache {
   char* const header_ = nullptr;
   size_t capacity_ = 0;
   size_t next_ = 0;
-  // TODO: currently only support single process & single thread. To support
-  // multi-process access, shared hash table should be employed.
-  std::unordered_map<std::string, std::pair<size_t, size_t>> h_;
+
+  LookupPtr lookup_;
+  InsertPtr insert_;
+  ClearPtr clear_;
 };
 
 }  // namespace vidardb
