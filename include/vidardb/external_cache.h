@@ -13,29 +13,31 @@
 
 namespace vidardb {
 
-typedef bool (*LookupPtr)(const char*, size_t*, size_t*);
-typedef void (*InsertPtr)(const char*, size_t, size_t);
-typedef void (*ClearPtr)(void);
+typedef bool (*LookupFunc)(const char*, size_t, size_t*, size_t*);
+typedef void (*InsertFunc)(const char*, size_t, size_t, size_t);
+typedef void (*ClearFunc)(void);
 
 // A fake version only support single process & single thread. To support
 // multi-process access, shared hash table should be employed.
 static std::unordered_map<std::string, std::pair<size_t, size_t>> h_;
 
-static bool simple_lookup(const char* key, size_t* offset, size_t* size) {
-  auto it = h_.find(std::string(key));
+static bool simple_lookup(const char* key, size_t len, size_t* off,
+                          size_t* size) {
+  auto it = h_.find(std::string(key, len));
   if (it == h_.end()) {
-    *offset = 0;
+    *off = 0;
     *size = 0;
     return false;
   } else {
-    *offset = it->second.first;
+    *off = it->second.first;
     *size = it->second.second;
     return true;
   }
 }
 
-static void simple_insert(const char* key, size_t offset, size_t size) {
-  h_[std::string(key)] = std::make_pair(offset, size);
+static void simple_insert(const char* key, size_t len, size_t off,
+                          size_t size) {
+  h_[std::string(key, len)] = std::make_pair(off, size);
 }
 
 static void simple_clear(void) {
@@ -50,9 +52,9 @@ static void simple_clear(void) {
 class ExternalCache {
  public:
   ExternalCache(char* const header = nullptr, size_t capacity = 0,
-                LookupPtr lookup = simple_lookup,
-                InsertPtr insert = simple_insert,
-                ClearPtr clear = simple_clear)
+                LookupFunc lookup = simple_lookup,
+                InsertFunc insert = simple_insert,
+                ClearFunc clear = simple_clear)
       : header_(header), capacity_(capacity), next_(0),
         lookup_(lookup), insert_(insert), clear_(clear) {}
 
@@ -77,7 +79,7 @@ class ExternalCache {
       next_ = 0;
     }
 
-    insert_(key.ToString().c_str(), next_, size);
+    insert_(key.ToString().c_str(), key.size(), next_, size);
     memcpy(header_ + next_, data, size);
     next_ += size;
     return s;
@@ -90,7 +92,7 @@ class ExternalCache {
   // size       Size of the page
   void Lookup(const Slice& key, char*& data, size_t& size) {
     size_t offset;
-    if (lookup_(key.ToString().c_str(), &offset, &size)) {
+    if (lookup_(key.ToString().c_str(), key.size(), &offset, &size)) {
       data = header_ + offset;
     } else {
       data = nullptr;
@@ -105,9 +107,9 @@ class ExternalCache {
   size_t capacity_ = 0;
   size_t next_ = 0;
 
-  LookupPtr lookup_;
-  InsertPtr insert_;
-  ClearPtr clear_;
+  LookupFunc lookup_;
+  InsertFunc insert_;
+  ClearFunc clear_;
 };
 
 }  // namespace vidardb
