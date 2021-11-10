@@ -14,16 +14,17 @@
 namespace vidardb {
 
 typedef bool (*LookupFunc)(const char*, size_t, size_t, size_t*, size_t*);
-typedef void (*InsertFunc)(const char*, size_t, size_t, size_t, size_t);
-typedef void (*ClearFunc)(void);
+typedef void (*InsertFunc)(const char*, size_t, size_t, char* const, size_t,
+                           const char*, size_t);
 
 // A fake version only support single process & single thread. To support
 // multi-process access, shared hash table should be employed.
 static std::unordered_map<std::string, std::pair<size_t, size_t>> h_;
+static size_t next_ = 0;
 
-static bool simple_lookup(const char* key, size_t len, size_t shared_id,
+static bool simple_lookup(const char* key, size_t klen, size_t shared_id,
                           size_t* off, size_t* size) {
-  auto it = h_.find(std::string(key, len));
+  auto it = h_.find(std::string(key, klen));
   if (it == h_.end()) {
     *off = 0;
     *size = 0;
@@ -35,13 +36,18 @@ static bool simple_lookup(const char* key, size_t len, size_t shared_id,
   }
 }
 
-static void simple_insert(const char* key, size_t len, size_t shared_id,
-                          size_t off, size_t size) {
-  h_[std::string(key, len)] = std::make_pair(off, size);
-}
+static void simple_insert(const char* key, size_t klen, size_t shared_id,
+                          char* const header, size_t capacity,
+                          const char* data, size_t size) {
+  if (capacity - next_ < size) {
+    h_.clear();
+    next_ = 0;
+  }
 
-static void simple_clear(void) {
-  h_.clear();
+  h_[std::string(key, klen)] = std::make_pair(next_, size);
+
+  memcpy(header + next_, data, size);
+  next_ += size;
 }
 
 // ExternalCache
@@ -53,15 +59,12 @@ class ExternalCache {
  public:
   ExternalCache(char* const header = nullptr, size_t capacity = 0,
                 size_t shared_id = 0, LookupFunc lookup = simple_lookup,
-                InsertFunc insert = simple_insert,
-                ClearFunc clear = simple_clear)
+                InsertFunc insert = simple_insert)
       : header_(header),
         capacity_(capacity),
-        next_(0),
         shared_id_(shared_id),
         lookup_(lookup),
-        insert_(insert),
-        clear_(clear) {}
+        insert_(insert) {}
 
   virtual ~ExternalCache() {}
 
@@ -79,14 +82,9 @@ class ExternalCache {
       s = Status::Incomplete("Insert failed due to limited cache capacity.");
     }
 
-    if (capacity_ - next_ < size) {
-      clear_();
-      next_ = 0;
-    }
+    insert_(key.ToString().c_str(), key.size(), shared_id_, header_, capacity_,
+            data, size);
 
-    insert_(key.ToString().c_str(), key.size(), shared_id_, next_, size);
-    memcpy(header_ + next_, data, size);
-    next_ += size;
     return s;
   }
 
@@ -111,12 +109,10 @@ class ExternalCache {
  private:
   char* const header_;
   size_t capacity_;
-  size_t next_;
   size_t shared_id_;
 
   LookupFunc lookup_;
   InsertFunc insert_;
-  ClearFunc clear_;
 };
 
 }  // namespace vidardb
