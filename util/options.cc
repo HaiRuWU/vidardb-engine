@@ -544,6 +544,15 @@ ColumnFamilyOptions* ColumnFamilyOptions::OptimizeLevelStyleCompaction(
 }
 
 /********************* Shichao ***************************/
+Options* Options::OptimizeAdaptiveLevelStyleCompaction(
+    uint64_t memtable_memory_budget) {
+  ColumnFamilyOptions::OptimizeAdaptiveLevelStyleCompaction(
+      memtable_memory_budget);
+  // Delete sub sst files immediately instead of at closing db.
+  delete_obsolete_files_period_micros = 0;
+  return this;
+}
+
 ColumnFamilyOptions* ColumnFamilyOptions::OptimizeAdaptiveLevelStyleCompaction(
     uint64_t memtable_memory_budget) {
   num_levels = 3;
@@ -551,7 +560,7 @@ ColumnFamilyOptions* ColumnFamilyOptions::OptimizeAdaptiveLevelStyleCompaction(
   min_write_buffer_number_to_merge = 2;
   max_write_buffer_number = 6;
   level0_file_num_compaction_trigger = 4;
-  target_file_size_base = memtable_memory_budget / 8;
+  target_file_size_base = memtable_memory_budget;
   max_bytes_for_level_base = memtable_memory_budget;
   max_bytes_for_level_multiplier = 10;
 

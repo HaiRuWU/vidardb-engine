@@ -184,7 +184,7 @@ struct ColumnFamilyOptions {
       uint64_t memtable_memory_budget = 512 * 1024 * 1024);
   /********************* Shichao ***************************/
   ColumnFamilyOptions* OptimizeAdaptiveLevelStyleCompaction(
-        uint64_t memtable_memory_budget = 512 * 1024 * 1024);
+      uint64_t memtable_memory_budget = 512 * 1024 * 1024);
   /********************* Shichao ***************************/
 
   // -------------------
@@ -985,6 +985,11 @@ struct Options : public DBOptions, public ColumnFamilyOptions {
   // Use this if your DB is very small (like under 1GB) and you don't want to
   // spend lots of memory for memtables.
   Options* OptimizeForSmallDb();
+
+  /************************* Shichao ****************************/
+  Options* OptimizeAdaptiveLevelStyleCompaction(
+      uint64_t memtable_memory_budget = 512 * 1024 * 1024);
+  /************************* Shichao ****************************/
 };
 
 //
